@@ -5,7 +5,7 @@
     <div class="app-navigation">
       <router-link to="/monatsuebersicht">Monatsübersicht</router-link>
       <router-link to="/konfiguration">Feste Posten</router-link>
-	  <router-link :to="{name: 'Jahresuebersicht'}" class="nav-button">Jahresübersicht</router-link>
+      <router-link :to="{name: 'Jahresuebersicht'}" class="nav-button">Jahresübersicht</router-link>
     </div>
     
     <!-- Router View für den Inhalt -->
@@ -22,7 +22,7 @@ export default {
 <style>
 /* Styling wie oben */
 .finance-app {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 20px;
 }
