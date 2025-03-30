@@ -279,7 +279,7 @@ export default {
         'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
       ],
       jahre: [],
-      kategorienReihenfolge: ['Versicherungen', 'Kredite', 'Haus', 'Kinder', 'Sonstiges'],
+      kategorienReihenfolge: ['Versicherungen', 'Autos', 'Kredite', 'Haus', 'Kinder', 'Sonstiges'],
     };
   },
   computed: {

@@ -501,3 +501,82 @@ async def read_ungeplante_transaktionen(
     db: Session = Depends(get_db)
 ):
     return get_ungeplante_transaktionen(db, monat, jahr)
+    
+@app.get("/jahresuebersicht/{jahr}")
+def get_jahresuebersicht(jahr: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Alle festen Ausgaben abrufen
+    cur.execute("SELECT * FROM feste_ausgaben;")
+    alle_ausgaben = cur.fetchall()
+    
+    # Alle festen Einnahmen abrufen
+    cur.execute("SELECT * FROM feste_einnahmen;")
+    alle_einnahmen = cur.fetchall()
+    
+    # Vorbereitung der Monatsübersicht
+    monats_daten = []
+    
+    # Summen für jeden Monat berechnen
+    for monat in range(1, 13):
+        monats_ausgaben = []
+        monat_summe = 0
+        
+        # Ausgaben für diesen Monat filtern und summieren
+        for ausgabe in alle_ausgaben:
+            # Prüfen, ob der aktuelle Monat in den Zahlungsmonaten ist
+            if monat in ausgabe['zahlungsmonate']:
+                monats_ausgaben.append({
+                    'id': ausgabe['id'],
+                    'beschreibung': ausgabe['beschreibung'],
+                    'betrag': float(ausgabe['betrag']),
+                    'kategorie': ausgabe['kategorie']
+                })
+                monat_summe += float(ausgabe['betrag'])
+        
+        # Einnahmen für diesen Monat filtern und summieren
+        monat_einnahmen = 0
+        for einnahme in alle_einnahmen:
+            if monat in einnahme['zahlungsmonate']:
+                monat_einnahmen += float(einnahme['betrag'])
+        
+        # Daten für diesen Monat speichern
+        monats_daten.append({
+            'monat': monat,
+            'ausgaben': monats_ausgaben,
+            'ausgaben_summe': monat_summe,
+            'einnahmen_summe': monat_einnahmen,
+            'saldo': monat_einnahmen - monat_summe
+        })
+    
+    # Jahres-Mittelwert berechnen
+    jahres_summe_ausgaben = sum(m['ausgaben_summe'] for m in monats_daten)
+    monatliches_mittel_ausgaben = jahres_summe_ausgaben / 12
+    
+    # Jahres-Mittelwert der Einnahmen
+    jahres_summe_einnahmen = sum(m['einnahmen_summe'] for m in monats_daten)
+    monatliches_mittel_einnahmen = jahres_summe_einnahmen / 12
+    
+    # Virtuellen Soll-Kontostand berechnen
+    kumulierter_saldo = 0
+    for monat_daten in monats_daten:
+        # Delta zum Monatsmittel berechnen
+        monat_delta = (monatliches_mittel_ausgaben - monat_daten['ausgaben_summe']) + (monat_daten['einnahmen_summe'] - monatliches_mittel_einnahmen)
+        
+        # Kumulieren
+        kumulierter_saldo += monat_delta
+        
+        # Zum Monatsdatensatz hinzufügen
+        monat_daten['delta_zum_mittel'] = monat_delta
+        monat_daten['virtueller_kontostand'] = kumulierter_saldo
+    
+    conn.close()
+    
+    return {
+        'monats_daten': monats_daten,
+        'jahres_summe_ausgaben': jahres_summe_ausgaben,
+        'monatliches_mittel_ausgaben': monatliches_mittel_ausgaben,
+        'jahres_summe_einnahmen': jahres_summe_einnahmen,
+        'monatliches_mittel_einnahmen': monatliches_mittel_einnahmen
+    }

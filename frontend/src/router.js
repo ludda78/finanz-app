@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
 import MonatsUebersicht from "./components/MonatsUebersicht.vue";
 import FesteKonfiguration from './components/FesteKonfiguration.vue';
+import JahresUebersicht from './components/JahresUebersicht.vue'; 
+
 
 const routes = [
   {
@@ -39,6 +41,14 @@ const routes = [
     path: '/konfiguration',
     name: 'Konfiguration',
     component: FesteKonfiguration
+  },
+  {
+    path: '/jahresuebersicht/:jahr?',
+    name: 'Jahresuebersicht',
+    component: JahresUebersicht,
+    props: (route) => ({
+      jahr: route.params.jahr ? parseInt(route.params.jahr) : new Date().getFullYear()
+    })
   }
 ];
 

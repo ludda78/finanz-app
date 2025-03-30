@@ -175,14 +175,7 @@
                    {{ kategorie }}
                 </option>
               </select>
-              <select id="edit-kategorie" v-model="editedAusgabe.kategorie" required>
-                <option value="Versicherungen">Versicherungen</option>
-                <option value="Autos">Autos</option>
-                <option value="Kredite">Kredite</option>
-                <option value="Haus">Haus</option>
-                <option value="Kinder">Kinder</option>
-                <option value="Sonstiges">Sonstiges</option>
-              </select>
+              
             </div>
             
             <div class="form-group">
@@ -412,8 +405,8 @@ export default {
       kategorienReihenfolge: [
        "Versicherungen",
        "Autos",
-       "Haus",
        "Kredite",
+       "Haus",
        "Kinder",
        "Sonstiges"
       ],
