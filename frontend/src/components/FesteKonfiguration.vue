@@ -408,7 +408,9 @@ export default {
        "Kredite",
        "Haus",
        "Kinder",
-       "Sonstiges"
+       "Hund",
+       "Sonstiges",
+       "Anteile Andrea"
       ],
     };
   },
