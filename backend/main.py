@@ -53,6 +53,7 @@ class FesteEinnahme(BaseModel):
     id: Optional[int] = None
     name: str
     betrag: float
+    kategorie: Optional[str] = None  # New field
     zahlungsmonate: List[int]
 
 # Modell für Monatsübersicht
@@ -174,7 +175,7 @@ def delete_feste_ausgabe(ausgabe_id: int):
 def get_feste_einnahmen():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, name, betrag, zahlungsmonate FROM feste_einnahmen")
+    cur.execute("SELECT id, name, betrag, kategorie, zahlungsmonate FROM feste_einnahmen")
     
     # Mit RealDictCursor sind die Ergebnisse bereits Dictionaries
     einnahmen = cur.fetchall()
@@ -201,9 +202,9 @@ def add_feste_einnahme(einnahme: FesteEinnahme):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO feste_einnahmen (name, betrag, zahlungsmonate)
+        INSERT INTO feste_einnahmen (name, betrag, kategorie, zahlungsmonate)
         VALUES (%s, %s, %s) RETURNING id
-    """, (einnahme.name, einnahme.betrag, einnahme.zahlungsmonate))
+    """, (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate))
     
     # Mit RealDictCursor über Spaltennamen zugreifen
     result = cur.fetchone()
@@ -218,6 +219,7 @@ def add_feste_einnahme(einnahme: FesteEinnahme):
             "id": new_id,
             "name": einnahme.name,
             "betrag": einnahme.betrag,
+            "kategorie": einnahme.kategorie,
             "zahlungsmonate": einnahme.zahlungsmonate
         }
     }
@@ -230,11 +232,11 @@ def update_feste_einnahme(einnahme_id: int, einnahme: FesteEinnahme):
         cur.execute(
             """
             UPDATE feste_einnahmen
-            SET name = %s, betrag = %s, zahlungsmonate = %s
+            SET name = %s, betrag = %s, kategorie = %s, zahlungsmonate = %s
             WHERE id = %s
             RETURNING *;
             """,
-            (einnahme.name, einnahme.betrag, einnahme.zahlungsmonate, einnahme_id),
+            (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate, einnahme_id),
         )
         updated_einnahme = cur.fetchone()
         conn.commit()
@@ -535,18 +537,48 @@ def get_jahresuebersicht(jahr: int):
                 })
                 monat_summe += float(ausgabe['betrag'])
         
-        # Einnahmen für diesen Monat filtern und summieren
+        # Einnahmen für diesen Monat filtern und summieren nach Kategorien
         monat_einnahmen = 0
+        monats_einnahmen = []
+        
+        # Kategorien zum Filtern
+        einnahmen_andrea = 0
+        einnahmen_andreas = 0
+        einnahmen_andere = 0
+        
         for einnahme in alle_einnahmen:
             if monat in einnahme['zahlungsmonate']:
-                monat_einnahmen += float(einnahme['betrag'])
+                betrag = float(einnahme['betrag'])
+                monat_einnahmen += betrag
+                
+                # Einnahmen nach Kategorien filtern
+                kategorie = einnahme.get('kategorie', 'Andere')
+                
+                monats_einnahmen.append({
+                    'id': einnahme['id'],
+                    'name': einnahme['name'],
+                    'betrag': betrag,
+                    'kategorie': kategorie
+                })
+                
+                # Nach Kategorien filtern
+                if kategorie == 'Andrea':
+                    einnahmen_andrea += betrag
+                elif kategorie == 'Andreas':
+                    einnahmen_andreas += betrag
+                else:
+                    einnahmen_andere += betrag
         
         # Daten für diesen Monat speichern
         monats_daten.append({
             'monat': monat,
             'ausgaben': monats_ausgaben,
             'ausgaben_summe': monat_summe,
+            'einnahmen': monats_einnahmen,
             'einnahmen_summe': monat_einnahmen,
+            'einnahmen_andrea': einnahmen_andrea,
+            'einnahmen_andreas': einnahmen_andreas,
+            'einnahmen_andere': einnahmen_andere,
             'saldo': monat_einnahmen - monat_summe
         })
     

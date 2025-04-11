@@ -57,7 +57,7 @@
                 <option value="vierteljährlich">Vierteljährlich</option>
                 <option value="halbjährlich">Halbjährlich</option>
                 <option value="jährlich">Jährlich</option>
-                <option value="benutzerdefiniert">Benutzerdefiniert</option>
+                <option value="custom">Benutzerdefiniert</option>
               </select>
             </div>
 			
@@ -93,7 +93,7 @@
                     type="checkbox" 
                     :value="n" 
                     v-model="neueAusgabe.zahlungsmonate"
-                    :disabled="neueAusgabe.zahlungsintervall !== 'benutzerdefiniert' && 
+                    :disabled="neueAusgabe.zahlungsintervall !== 'custom' && 
                      !isMonthIncludedInInterval(n)"
                   />
                  {{ getMonthName(n) }}
@@ -186,7 +186,7 @@
                 <option value="vierteljährlich">Vierteljährlich</option>
                 <option value="halbjährlich">Halbjährlich</option>
                 <option value="jährlich">Jährlich</option>
-                <option value="benutzerdefiniert">Benutzerdefiniert</option>
+                <option value="custom">Benutzerdefiniert</option>
               </select>
             </div>
 			
@@ -220,7 +220,7 @@
 							type="checkbox" 
 							:value="n" 
 							v-model="editedAusgabe.zahlungsmonate"
-							:disabled="editedAusgabe.zahlungsintervall !== 'benutzerdefiniert' && 
+							:disabled="editedAusgabe.zahlungsintervall !== 'custom' && 
 										!isMonthIncludedInInterval(n, editedAusgabe.zahlungsintervall)"
 						/>
 						{{ getMonthName(n) }}
@@ -264,6 +264,15 @@
               <input id="einnahme-betrag" type="number" step="0.01" v-model.number="neueEinnahme.betrag" required />
             </div>
             
+			<div class="form-group">
+              <label for="einnahme-kategorie">Kategorie:</label>
+                <select id="einnahme-kategorie" v-model="neueEinnahme.kategorie" required>
+					<option value="">Bitte wählen</option>
+					<option value="Andrea">Andrea</option>
+					<option value="Martin">Martin</option>
+					<option value="Gemeinsam">Gemeinsam</option>
+                </select>
+		</div>
             <div class="form-group">
               <label>Zahlungsmonate:</label>
               <div class="monate-grid">
@@ -289,6 +298,7 @@
             <tr>
               <th>Name</th>
               <th>Betrag</th>
+              <th>Kategorie</th>
               <th>Monate</th>
               <th>Aktionen</th>
             </tr>
@@ -297,6 +307,7 @@
             <tr v-for="einnahme in festeEinnahmen" :key="einnahme.id">
               <td>{{ einnahme.name }}</td>
               <td>{{ einnahme.betrag }} €</td>
+              <td>{{ einnahme.kategorie }}</td>
               <td>
                 <div class="monate-tags">
                   <span v-for="monat in formatZahlungsmonate(einnahme.zahlungsmonate)" :key="monat" class="monat-tag">
@@ -330,6 +341,16 @@
               <label for="edit-einnahme-betrag">Betrag (€):</label>
               <input id="edit-einnahme-betrag" type="number" step="0.01" v-model.number="editedEinnahme.betrag" required />
             </div>
+			
+			<div class="form-group">
+              <label for="edit-einnahme-kategorie">Kategorie:</label>
+				<select id="edit-einnahme-kategorie" v-model="editedEinnahme.kategorie" required>
+					<option value="">Bitte wählen</option>
+					<option value="Andrea">Andrea</option>
+					<option value="Martin">Martin</option>
+					<option value="Gemeinsam">Gemeinsam</option>
+				</select>
+			</div>
             
             <div class="form-group">
               <label>Zahlungsmonate:</label>
@@ -394,12 +415,14 @@ export default {
       neueEinnahme: {
         name: "",
         betrag: null,
+		kategorie: "",
         zahlungsmonate: []
       },
       editedEinnahme: {
         id: null,
         name: "",
         betrag: null,
+		kategorie: "",
         zahlungsmonate: []
       },
       kategorienReihenfolge: [
@@ -530,7 +553,7 @@ export default {
     
     // Überprüft, ob ein Monat in das gewählte Intervall passt
 	isMonthIncludedInInterval(month, interval = this.neueAusgabe.zahlungsintervall) {
-	if (interval === "benutzerdefiniert") return true;
+	if (interval === "custom") return true;
 	if (interval === "monatlich") return true;
 	if (interval === "zweimonatlich") return month % 2 === 1;
 	if (interval === "vierteljährlich") return month % 3 === 1;
@@ -542,7 +565,7 @@ export default {
 	// Aktualisiert die Zahlungsmonate basierend auf dem Intervall
 	updateZahlungsmonate() {
     const interval = this.neueAusgabe.zahlungsintervall;
-    if (interval === "benutzerdefiniert") return;
+    if (interval === "custom") return;
     
     if (interval === "monatlich") {
       this.neueAusgabe.zahlungsmonate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -599,7 +622,7 @@ export default {
     async addFesteAusgabe() {
       try {
         // Aktualisiere Zahlungsmonate wenn nicht benutzerdefiniert
-        if (this.neueAusgabe.zahlungsintervall !== "benutzerdefiniert") {
+        if (this.neueAusgabe.zahlungsintervall !== "custom") {
           this.updateZahlungsmonate();
         }
         
@@ -683,7 +706,7 @@ export default {
     async updateFesteAusgabe() {
       try {
         // Aktualisiere Zahlungsmonate wenn nicht benutzerdefiniert
-        if (this.editedAusgabe.zahlungsintervall !== "benutzerdefiniert") {
+        if (this.editedAusgabe.zahlungsintervall !== "custom") {
           const interval = this.editedAusgabe.zahlungsintervall;
           if (interval === "monatlich") {
             this.editedAusgabe.zahlungsmonate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -751,6 +774,7 @@ export default {
         this.neueEinnahme = {
           name: "",
           betrag: null,
+          kategorie: "",
           zahlungsmonate: []
         };
         
@@ -825,7 +849,7 @@ watch: {
       this.neueAusgabe.zahlungsmonate = [1, 7];
     } else if (newVal === 'monatlich') {
       this.neueAusgabe.zahlungsmonate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    } else if (newVal === 'benutzerdefiniert') {
+    } else if (newVal === 'custom') {
       // Bei benutzerdefiniert alle Checkboxen aktivieren/Monate lassen
     }
   },
@@ -848,7 +872,7 @@ watch: {
       this.editedAusgabe.zahlungsmonate = [1, 7];
     } else if (newVal === 'monatlich') {
       this.editedAusgabe.zahlungsmonate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    } else if (newVal === 'benutzerdefiniert') {
+    } else if (newVal === 'custom') {
       // Bei benutzerdefiniert alle Checkboxen aktivieren/Monate lassen
     }
   },
