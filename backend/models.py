@@ -60,3 +60,4 @@ class UngeplantTransaktion(Base):
     monat = Column(Integer, nullable=False)
     jahr = Column(Integer, nullable=False)
     datum = Column(DateTime, default=datetime.now)
+    status = Column(String, default="kein_ausgleich")  # Neues Status-Feld

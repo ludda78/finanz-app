@@ -11,7 +11,8 @@ def create_ungeplante_transaktion(db: Session, transaktion: schemas.UngeplantTra
         kommentar=transaktion.kommentar,
         monat=transaktion.monat,
         jahr=transaktion.jahr,
-        datum=datetime.now()
+        datum=transaktion.datum or datetime.now(),
+        status=transaktion.status or "kein_ausgleich"  # Status-Feld hinzufügen
     )
     db.add(db_transaktion)
     db.commit()

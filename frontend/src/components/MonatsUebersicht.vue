@@ -180,13 +180,22 @@
               <tr>
                 <th>Beschreibung</th>
                 <th>Betrag</th>
+                <th>Status</th>
                 <th>Aktionen</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="ausgabe in ungeplannteAusgaben" :key="ausgabe.id">
+              <tr v-for="ausgabe in ungeplannteAusgaben" :key="ausgabe.id" 
+                  :style="{ color: getStatusColor(ausgabe.status) }">
                 <td>{{ ausgabe.beschreibung }}</td>
                 <td>{{ ausgabe.betrag }}€</td>
+                <td>
+                  <select v-model="ausgabe.status" @change="updateAusgabeStatus(ausgabe, ausgabe.status)">
+                    <option value="not_balanced">Nicht ausgeglichen</option>
+                    <option value="balanced">Ausgeglichen</option>
+                    <option value="no_balance_needed">Kein Ausgleich nötig</option>
+                  </select>
+                </td>
                 <td>
                   <button @click="createAusgleich(ausgabe)">Ausgleich</button>
                 </td>
@@ -195,6 +204,7 @@
               <tr class="summen-zeile" v-if="ungeplannteAusgaben.length > 0">
                 <td><strong>Summe</strong></td>
                 <td><strong>{{ summeUngeplannteAusgaben }} €</strong></td>
+                <td></td>
                 <td></td>
               </tr>
             </tbody>
@@ -261,7 +271,8 @@ export default {
         kommentar: '',
         typ: 'ausgabe',
         monat: null,
-        jahr: null
+        jahr: null,
+		status: 'not_balanced' // Standardwert: nicht ausgeglichen
       },
       newEinnahme: {
         beschreibung: '',
@@ -538,7 +549,40 @@ export default {
       const soll = parseFloat(this.berechneSummeSoll(items));
       const ist = parseFloat(this.berechneSummeIst(items));
       return (ist - soll).toFixed(2);
-    } 
+    },
+	
+	// Fügen Sie eine neue Methode hinzu, um den Status zu aktualisieren:
+	async updateAusgabeStatus(ausgabe, newStatus) {
+		try {
+			const response = await axios.put(`${ungeplanteTrxUrl}/${ausgabe.id}`, {
+			...ausgabe,
+			status: newStatus
+			});
+		
+			// Aktualisieren Sie den Status in der lokalen Liste
+			const index = this.ungeplannteAusgaben.findIndex(a => a.id === ausgabe.id);
+			if (index !== -1) {
+				this.ungeplannteAusgaben[index].status = newStatus;
+			}
+		
+			console.log("Status aktualisiert:", response.data);
+		} catch (error) {
+			console.error("Fehler beim Aktualisieren des Status:", error);
+		}
+	},
+
+// Fügen Sie eine Hilfsmethode hinzu, um die richtige Farbe basierend auf dem Status zu ermitteln:
+	getStatusColor(status) {
+		switch(status) {
+			case 'balanced':
+				return 'green';
+			case 'not_balanced':
+				return 'red';
+			case 'no_balance_needed':
+				default:
+			return 'inherit';
+		}
+	}
   },
   watch: {
     // Watch for route changes to reload data

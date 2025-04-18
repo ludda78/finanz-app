@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from database import SessionLocal, engine
 from sqlalchemy.sql import text
-
+from datetime import datetime 
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date
@@ -22,6 +22,13 @@ from dotenv import load_dotenv
 
 from fastapi.middleware.cors import CORSMiddleware
 from crud import create_ungeplante_transaktion, get_ungeplante_transaktionen
+from enum import Enum
+
+# Enum für den Status der ungeplanten Ausgaben
+class TransaktionStatus(str, Enum):
+    AUSGEGLICHEN = "ausgeglichen"
+    NICHT_AUSGEGLICHEN = "nicht_ausgeglichen"
+    KEIN_AUSGLEICH = "kein_ausgleich"
 
 # Modell für ungeplante Ausgaben
 class UngeplanteAusgabe(BaseModel):
@@ -30,6 +37,7 @@ class UngeplanteAusgabe(BaseModel):
     kategorie: Optional[str] = None  # Optional, da es keine festen Kategorien gibt
     datum: date  # Ein Datum für die Ausgabe
     erstellt_am: Optional[str] = None  # Automatisch generiert, wenn nicht angegeben
+    status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
 
 # Modell für ungeplante Einnahmen
 class UngeplanteEinnahme(BaseModel):
@@ -38,6 +46,11 @@ class UngeplanteEinnahme(BaseModel):
     kategorie: Optional[str] = None  # Optional, je nach Bedarf
     datum: date  # Ein Datum für die Einnahme
     erstellt_am: Optional[str] = None  # Automatisch generiert, wenn nicht angegeben
+    status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
+    
+# Modell für die Aktualisierung des Status
+class StatusUpdate(BaseModel):
+    status: TransaktionStatus
 
 # Pydantic-Modell für Ausgaben
 class FesteAusgabe(BaseModel):
@@ -66,6 +79,19 @@ class Monatsuebersicht(BaseModel):
     ungeplante_einnahmen: List[UngeplanteEinnahme]  # Ungeplante Einnahmen im Monat
  #   gesamt_ausgaben: float  # Summe der Ausgaben
  #   gesamt_einnahmen: float  # Summe der Einnahmen
+ 
+ # Schemas-Erweiterung für den Status
+class UngeplantTransaktionCreate(BaseModel):
+    # Bestehende Felder beibehalten
+    typ: str
+    beschreibung: str
+    betrag: float
+    kommentar: Optional[str] = None
+    monat: int
+    jahr: int
+    datum: Optional[datetime] = None
+    status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
+
 
 app = FastAPI()
 
@@ -289,11 +315,11 @@ def create_ungeplante_ausgabe(ausgabe: UngeplanteAusgabe):
     try:
         cur.execute(
             """
-            INSERT INTO ungeplante_ausgaben (beschreibung, betrag, kategorie, datum, erstellt_am)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO ungeplante_ausgaben (beschreibung, betrag, kategorie, datum, erstellt_am, status)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
             RETURNING *;
             """,
-            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.datum)
+            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.datum, ausgabe.status)
         )
         new_ausgabe = cur.fetchone()
         conn.commit()
@@ -311,11 +337,11 @@ def create_ungeplante_einnahme(einnahme: UngeplanteEinnahme):
     try:
         cur.execute(
             """
-            INSERT INTO ungeplante_einnahmen (beschreibung, betrag, kategorie, datum, erstellt_am)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO ungeplante_einnahmen (beschreibung, betrag, kategorie, datum, erstellt_am, status)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
             RETURNING *;
             """,
-            (einnahme.beschreibung, einnahme.betrag, einnahme.kategorie, einnahme.datum)
+            (einnahme.beschreibung, einnahme.betrag, einnahme.kategorie, einnahme.datum, einnahme.status)
         )
         new_einnahme = cur.fetchone()
         conn.commit()
@@ -342,6 +368,109 @@ def get_ungeplante_einnahmen():
     einnahmen = cur.fetchall()
     conn.close()
     return einnahmen
+    
+# Neue Endpunkte für die Aktualisierung des Status
+@app.put("/ungeplante-ausgaben/{ausgabe_id}/status")
+def update_ausgabe_status(ausgabe_id: int, status_update: StatusUpdate):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_ausgaben
+            SET status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (status_update.status, ausgabe_id)
+        )
+        updated_ausgabe = cur.fetchone()
+        conn.commit()
+        if not updated_ausgabe:
+            raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_ausgabe
+
+@app.put("/ungeplante-einnahmen/{einnahme_id}/status")
+def update_einnahme_status(einnahme_id: int, status_update: StatusUpdate):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_einnahmen
+            SET status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (status_update.status, einnahme_id)
+        )
+        updated_einnahme = cur.fetchone()
+        conn.commit()
+        if not updated_einnahme:
+            raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_einnahme
+
+# Endpunkt für vollständige Aktualisierung einer ungeplanten Ausgabe
+@app.put("/ungeplante-ausgaben/{ausgabe_id}")
+def update_ungeplante_ausgabe(ausgabe_id: int, ausgabe: UngeplanteAusgabe):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_ausgaben
+            SET beschreibung = %s, betrag = %s, kategorie = %s, datum = %s, status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.datum, ausgabe.status, ausgabe_id)
+        )
+        updated_ausgabe = cur.fetchone()
+        conn.commit()
+        if not updated_ausgabe:
+            raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_ausgabe
+
+# Endpunkt für vollständige Aktualisierung einer ungeplanten Einnahme
+@app.put("/ungeplante-einnahmen/{einnahme_id}")
+def update_ungeplante_einnahme(einnahme_id: int, einnahme: UngeplanteEinnahme):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_einnahmen
+            SET beschreibung = %s, betrag = %s, kategorie = %s, datum = %s, status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (einnahme.beschreibung, einnahme.betrag, einnahme.kategorie, einnahme.datum, einnahme.status, einnahme_id)
+        )
+        updated_einnahme = cur.fetchone()
+        conn.commit()
+        if not updated_einnahme:
+            raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_einnahme
 
 @app.get("/monatsuebersicht/{monat}/{jahr}", response_model=Monatsuebersicht)
 def get_monatsuebersicht(monat: int, jahr: int):
@@ -503,6 +632,41 @@ async def read_ungeplante_transaktionen(
     db: Session = Depends(get_db)
 ):
     return get_ungeplante_transaktionen(db, monat, jahr)
+    
+# Update PUT-Endpunkt für /ungeplante-transaktionen/{id}
+@app.put("/ungeplante-transaktionen/{id}")
+async def update_ungeplante_transaktion(
+    id: int,
+    transaktion_data: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Aktualisiert eine ungeplante Transaktion, einschließlich des Status.
+    """
+    # Die Transaktion aus der Datenbank abrufen
+    transaktion = db.query(models.UngeplantTransaktion).filter(
+        models.UngeplantTransaktion.id == id
+    ).first()
+    
+    if not transaktion:
+        raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
+    
+    # Felder aktualisieren, die im Request enthalten sind
+    update_data = {}
+    
+    # Alle Felder prüfen, die aktualisiert werden könnten
+    possible_fields = ["typ", "beschreibung", "betrag", "kommentar", "monat", 
+                      "jahr", "datum", "status"]
+    
+    for field in possible_fields:
+        if field in transaktion_data:
+            setattr(transaktion, field, transaktion_data[field])
+    
+    # Änderungen in der Datenbank speichern
+    db.commit()
+    db.refresh(transaktion)
+    
+    return transaktion
     
 @app.get("/jahresuebersicht/{jahr}")
 def get_jahresuebersicht(jahr: int):
