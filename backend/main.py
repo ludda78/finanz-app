@@ -633,6 +633,20 @@ async def read_ungeplante_transaktionen(
 ):
     return get_ungeplante_transaktionen(db, monat, jahr)
     
+@app.delete("/ungeplante-transaktionen/{id}")
+async def delete_ungeplante_transaktion(id: int, db: Session = Depends(get_db)):
+    transaktion = db.query(models.UngeplantTransaktion).filter(
+        models.UngeplantTransaktion.id == id
+    ).first()
+
+    if not transaktion:
+        raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
+
+    db.delete(transaktion)
+    db.commit()
+    return {"message": f"Transaktion mit ID {id} erfolgreich gelöscht"}
+ 
+    
 # Update PUT-Endpunkt für /ungeplante-transaktionen/{id}
 @app.put("/ungeplante-transaktionen/{id}")
 async def update_ungeplante_transaktion(
