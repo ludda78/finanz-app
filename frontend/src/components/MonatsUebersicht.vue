@@ -160,7 +160,7 @@
       </table>
     </div>
     
-    <!-- Ungeplante Transaktionen wie zuvor -->
+    <!-- Ungeplante Transaktionen -->
     <div class="ungeplante-transaktionen">
       <h2>Ungeplante Transaktionen</h2>
       
@@ -172,7 +172,8 @@
             <input v-model="newAusgabe.beschreibung" placeholder="Beschreibung" required>
             <input v-model.number="newAusgabe.betrag" type="number" placeholder="Betrag" required>
             <textarea v-model="newAusgabe.kommentar" placeholder="Kommentar (optional)"></textarea>
-            <button type="submit">Ausgabe hinzufügen</button>
+            <button type="submit">{{ editAusgabeId ? 'Ausgabe aktualisieren' : 'Ausgabe hinzufügen' }}</button>
+            <button v-if="editAusgabeId" type="button" @click="cancelEdit('ausgabe')">Abbrechen</button>
           </form>
 
           <table>
@@ -180,21 +181,33 @@
               <tr>
                 <th>Beschreibung</th>
                 <th>Betrag</th>
+                <th>Status</th>
                 <th>Aktionen</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="ausgabe in ungeplannteAusgaben" :key="ausgabe.id">
+              <tr v-for="ausgabe in ungeplannteAusgaben" :key="ausgabe.id" 
+                  :style="{ color: getStatusColor(ausgabe.status) }">
                 <td>{{ ausgabe.beschreibung }}</td>
                 <td>{{ ausgabe.betrag }}€</td>
                 <td>
+                  <select v-model="ausgabe.status" @change="updateAusgabeStatus(ausgabe, ausgabe.status)">
+                    <option value="nicht_ausgeglichen">Nicht ausgeglichen</option>
+                    <option value="ausgeglichen">Ausgeglichen</option>
+                    <option value="kein_ausgleich">Kein Ausgleich nötig</option>
+                  </select>
+                </td>
+                <td>
                   <button @click="createAusgleich(ausgabe)">Ausgleich</button>
+                  <button @click="editAusgabe(ausgabe)">Bearbeiten</button>
+                  <button @click="deleteTransaktion(ausgabe.id, 'ausgabe')">Löschen</button>
                 </td>
               </tr>
               <!-- Summenzeile für ungeplante Ausgaben -->
               <tr class="summen-zeile" v-if="ungeplannteAusgaben.length > 0">
                 <td><strong>Summe</strong></td>
                 <td><strong>{{ summeUngeplannteAusgaben }} €</strong></td>
+                <td></td>
                 <td></td>
               </tr>
             </tbody>
@@ -207,7 +220,8 @@
           <form @submit.prevent="addEinnahme">
             <input v-model="newEinnahme.beschreibung" placeholder="Beschreibung" required>
             <input v-model.number="newEinnahme.betrag" type="number" placeholder="Betrag" required>
-            <button type="submit">Einnahme hinzufügen</button>
+            <button type="submit">{{ editEinnahmeId ? 'Einnahme aktualisieren' : 'Einnahme hinzufügen' }}</button>
+            <button v-if="editEinnahmeId" type="button" @click="cancelEdit('einnahme')">Abbrechen</button>
           </form>
 
           <table>
@@ -215,17 +229,23 @@
               <tr>
                 <th>Beschreibung</th>
                 <th>Betrag</th>
+                <th>Aktionen</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="einnahme in ungeplannteEinnahmen" :key="einnahme.id">
                 <td>{{ einnahme.beschreibung }}</td>
                 <td>{{ einnahme.betrag }}€</td>
+                <td>
+                  <button @click="editEinnahme(einnahme)">Bearbeiten</button>
+                  <button @click="deleteTransaktion(einnahme.id, 'einnahme')">Löschen</button>
+                </td>
               </tr>
               <!-- Summenzeile für ungeplante Einnahmen -->
               <tr class="summen-zeile" v-if="ungeplannteEinnahmen.length > 0">
                 <td><strong>Summe</strong></td>
                 <td><strong>{{ summeUngeplannteEinnahmen }} €</strong></td>
+                <td></td>
               </tr>
             </tbody>
           </table>
@@ -261,7 +281,8 @@ export default {
         kommentar: '',
         typ: 'ausgabe',
         monat: null,
-        jahr: null
+        jahr: null,
+		status: 'nicht_ausgeglichen' // Standardwert: nicht ausgeglichen
       },
       newEinnahme: {
         beschreibung: '',
@@ -270,6 +291,10 @@ export default {
         monat: null,
         jahr: null
       },
+    
+      // Neue Properties für die Bearbeitungsfunktion
+      editAusgabeId: null,
+      editEinnahmeId: null,	  
       
       // New properties for month/year selection
       selectedMonth: parseInt(this.monat),
@@ -279,7 +304,7 @@ export default {
         'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
       ],
       jahre: [],
-      kategorienReihenfolge: ['Versicherungen', 'Kredite', 'Haus', 'Kinder', 'Sonstiges'],
+      kategorienReihenfolge: ['Versicherungen', 'Autos', 'Kredite', 'Haus', 'Kinder', 'Hund', 'Sonstiges', 'Anteile Andrea'],
     };
   },
   computed: {
@@ -480,24 +505,90 @@ export default {
       }
     },
 
-    async addAusgabe() {
-      try {
-        this.newAusgabe.monat = this.monat;
-        this.newAusgabe.jahr = this.jahr;
-		const response = await axios.post(ungeplanteTrxUrl, this.newAusgabe);
-
-        this.ungeplannteAusgaben.push(response.data);
-        
+    // Neue Methoden für die Bearbeitung und Löschung
+    editAusgabe(ausgabe) {
+      this.editAusgabeId = ausgabe.id;
+      this.newAusgabe = {
+        beschreibung: ausgabe.beschreibung,
+        betrag: ausgabe.betrag,
+        kommentar: ausgabe.kommentar || '',
+        typ: 'ausgabe',
+        monat: this.monat,
+        jahr: this.jahr,
+        status: ausgabe.status || 'nicht_ausgeglichen'
+      };
+    },
+    
+    editEinnahme(einnahme) {
+      this.editEinnahmeId = einnahme.id;
+      this.newEinnahme = {
+        beschreibung: einnahme.beschreibung,
+        betrag: einnahme.betrag,
+        typ: 'einnahme',
+        monat: this.monat,
+        jahr: this.jahr
+      };
+    },
+    
+    cancelEdit(type) {
+      if (type === 'ausgabe') {
+        this.editAusgabeId = null;
         this.newAusgabe = {
           beschreibung: '',
           betrag: null,
           kommentar: '',
           typ: 'ausgabe',
           monat: this.monat,
+          jahr: this.jahr,
+          status: 'nicht_ausgeglichen'
+        };
+      } else {
+        this.editEinnahmeId = null;
+        this.newEinnahme = {
+          beschreibung: '',
+          betrag: null,
+          typ: 'einnahme',
+          monat: this.monat,
           jahr: this.jahr
         };
+      }
+    },
+
+    async addAusgabe() {
+      try {
+        this.newAusgabe.monat = this.monat;
+        this.newAusgabe.jahr = this.jahr;
+        
+        let response;
+        if (this.editAusgabeId) {
+          // Update bestehende Ausgabe
+          response = await axios.put(`${ungeplanteTrxUrl}/${this.editAusgabeId}`, this.newAusgabe);
+          
+          // Aktualisiere die lokale Liste
+          const index = this.ungeplannteAusgaben.findIndex(a => a.id === this.editAusgabeId);
+          if (index !== -1) {
+            this.ungeplannteAusgaben[index] = response.data;
+          }
+          
+          this.editAusgabeId = null;
+        } else {
+          // Neue Ausgabe hinzufügen
+          response = await axios.post(ungeplanteTrxUrl, this.newAusgabe);
+          this.ungeplannteAusgaben.push(response.data);
+        }
+        
+        // Formular zurücksetzen
+        this.newAusgabe = {
+          beschreibung: '',
+          betrag: null,
+          kommentar: '',
+          typ: 'ausgabe',
+          monat: this.monat,
+          jahr: this.jahr,
+          status: 'nicht_ausgeglichen'
+        };
       } catch (error) {
-        console.error("Fehler beim Hinzufügen der Ausgabe:", error);
+        console.error("Fehler beim Hinzufügen/Aktualisieren der Ausgabe:", error);
       }
     },
     
@@ -506,9 +597,25 @@ export default {
         this.newEinnahme.monat = this.monat;
         this.newEinnahme.jahr = this.jahr;
         
-		const response = await axios.post(ungeplanteTrxUrl, this.newEinnahme);
-        this.ungeplannteEinnahmen.push(response.data);
+        let response;
+        if (this.editEinnahmeId) {
+          // Update bestehende Einnahme
+          response = await axios.put(`${ungeplanteTrxUrl}/${this.editEinnahmeId}`, this.newEinnahme);
+          
+          // Aktualisiere die lokale Liste
+          const index = this.ungeplannteEinnahmen.findIndex(e => e.id === this.editEinnahmeId);
+          if (index !== -1) {
+            this.ungeplannteEinnahmen[index] = response.data;
+          }
+          
+          this.editEinnahmeId = null;
+        } else {
+          // Neue Einnahme hinzufügen
+          response = await axios.post(ungeplanteTrxUrl, this.newEinnahme);
+          this.ungeplannteEinnahmen.push(response.data);
+        }
         
+        // Formular zurücksetzen
         this.newEinnahme = {
           beschreibung: '',
           betrag: null,
@@ -517,7 +624,26 @@ export default {
           jahr: this.jahr
         };
       } catch (error) {
-        console.error("Fehler beim Hinzufügen der Einnahme:", error);
+        console.error("Fehler beim Hinzufügen/Aktualisieren der Einnahme:", error);
+      }
+    },
+    
+    async deleteTransaktion(id, typ) {
+      if (!confirm('Möchtest du diesen Eintrag wirklich löschen?')) {
+        return;
+      }
+      
+      try {
+        await axios.delete(`${ungeplanteTrxUrl}/${id}`);
+        
+        // Entferne den Eintrag aus der lokalen Liste
+        if (typ === 'ausgabe') {
+          this.ungeplannteAusgaben = this.ungeplannteAusgaben.filter(a => a.id !== id);
+        } else {
+          this.ungeplannteEinnahmen = this.ungeplannteEinnahmen.filter(e => e.id !== id);
+        }
+      } catch (error) {
+        console.error("Fehler beim Löschen der Transaktion:", error);
       }
     },
     
@@ -538,7 +664,40 @@ export default {
       const soll = parseFloat(this.berechneSummeSoll(items));
       const ist = parseFloat(this.berechneSummeIst(items));
       return (ist - soll).toFixed(2);
-    } 
+    },
+	
+	// Fügen Sie eine neue Methode hinzu, um den Status zu aktualisieren:
+	async updateAusgabeStatus(ausgabe, newStatus) {
+		try {
+			const response = await axios.put(`${ungeplanteTrxUrl}/${ausgabe.id}`, {
+			...ausgabe,
+			status: newStatus
+			});
+		
+			// Aktualisieren Sie den Status in der lokalen Liste
+			const index = this.ungeplannteAusgaben.findIndex(a => a.id === ausgabe.id);
+			if (index !== -1) {
+				this.ungeplannteAusgaben[index].status = newStatus;
+			}
+		
+			console.log("Status aktualisiert:", response.data);
+		} catch (error) {
+			console.error("Fehler beim Aktualisieren des Status:", error);
+		}
+	},
+
+// Fügen Sie eine Hilfsmethode hinzu, um die richtige Farbe basierend auf dem Status zu ermitteln:
+	getStatusColor(status) {
+		switch(status) {
+			case 'ausgeglichen':
+				return 'green';
+			case 'nicht_ausgeglichen':
+				return 'red';
+			case 'kein_ausgleich':
+				default:
+			return 'inherit';
+		}
+	}
   },
   watch: {
     // Watch for route changes to reload data

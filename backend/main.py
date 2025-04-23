@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from database import SessionLocal, engine
 from sqlalchemy.sql import text
-
+from datetime import datetime 
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date
@@ -22,6 +22,13 @@ from dotenv import load_dotenv
 
 from fastapi.middleware.cors import CORSMiddleware
 from crud import create_ungeplante_transaktion, get_ungeplante_transaktionen
+from enum import Enum
+
+# Enum für den Status der ungeplanten Ausgaben
+class TransaktionStatus(str, Enum):
+    AUSGEGLICHEN = "ausgeglichen"
+    NICHT_AUSGEGLICHEN = "nicht_ausgeglichen"
+    KEIN_AUSGLEICH = "kein_ausgleich"
 
 # Modell für ungeplante Ausgaben
 class UngeplanteAusgabe(BaseModel):
@@ -30,6 +37,7 @@ class UngeplanteAusgabe(BaseModel):
     kategorie: Optional[str] = None  # Optional, da es keine festen Kategorien gibt
     datum: date  # Ein Datum für die Ausgabe
     erstellt_am: Optional[str] = None  # Automatisch generiert, wenn nicht angegeben
+    status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
 
 # Modell für ungeplante Einnahmen
 class UngeplanteEinnahme(BaseModel):
@@ -38,6 +46,11 @@ class UngeplanteEinnahme(BaseModel):
     kategorie: Optional[str] = None  # Optional, je nach Bedarf
     datum: date  # Ein Datum für die Einnahme
     erstellt_am: Optional[str] = None  # Automatisch generiert, wenn nicht angegeben
+    status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
+    
+# Modell für die Aktualisierung des Status
+class StatusUpdate(BaseModel):
+    status: TransaktionStatus
 
 # Pydantic-Modell für Ausgaben
 class FesteAusgabe(BaseModel):
@@ -53,6 +66,7 @@ class FesteEinnahme(BaseModel):
     id: Optional[int] = None
     name: str
     betrag: float
+    kategorie: Optional[str] = None  # New field
     zahlungsmonate: List[int]
 
 # Modell für Monatsübersicht
@@ -65,6 +79,19 @@ class Monatsuebersicht(BaseModel):
     ungeplante_einnahmen: List[UngeplanteEinnahme]  # Ungeplante Einnahmen im Monat
  #   gesamt_ausgaben: float  # Summe der Ausgaben
  #   gesamt_einnahmen: float  # Summe der Einnahmen
+ 
+ # Schemas-Erweiterung für den Status
+class UngeplantTransaktionCreate(BaseModel):
+    # Bestehende Felder beibehalten
+    typ: str
+    beschreibung: str
+    betrag: float
+    kommentar: Optional[str] = None
+    monat: int
+    jahr: int
+    datum: Optional[datetime] = None
+    status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
+
 
 app = FastAPI()
 
@@ -174,7 +201,7 @@ def delete_feste_ausgabe(ausgabe_id: int):
 def get_feste_einnahmen():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, name, betrag, zahlungsmonate FROM feste_einnahmen")
+    cur.execute("SELECT id, name, betrag, kategorie, zahlungsmonate FROM feste_einnahmen")
     
     # Mit RealDictCursor sind die Ergebnisse bereits Dictionaries
     einnahmen = cur.fetchall()
@@ -201,9 +228,9 @@ def add_feste_einnahme(einnahme: FesteEinnahme):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO feste_einnahmen (name, betrag, zahlungsmonate)
+        INSERT INTO feste_einnahmen (name, betrag, kategorie, zahlungsmonate)
         VALUES (%s, %s, %s) RETURNING id
-    """, (einnahme.name, einnahme.betrag, einnahme.zahlungsmonate))
+    """, (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate))
     
     # Mit RealDictCursor über Spaltennamen zugreifen
     result = cur.fetchone()
@@ -218,6 +245,7 @@ def add_feste_einnahme(einnahme: FesteEinnahme):
             "id": new_id,
             "name": einnahme.name,
             "betrag": einnahme.betrag,
+            "kategorie": einnahme.kategorie,
             "zahlungsmonate": einnahme.zahlungsmonate
         }
     }
@@ -230,11 +258,11 @@ def update_feste_einnahme(einnahme_id: int, einnahme: FesteEinnahme):
         cur.execute(
             """
             UPDATE feste_einnahmen
-            SET name = %s, betrag = %s, zahlungsmonate = %s
+            SET name = %s, betrag = %s, kategorie = %s, zahlungsmonate = %s
             WHERE id = %s
             RETURNING *;
             """,
-            (einnahme.name, einnahme.betrag, einnahme.zahlungsmonate, einnahme_id),
+            (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate, einnahme_id),
         )
         updated_einnahme = cur.fetchone()
         conn.commit()
@@ -287,11 +315,11 @@ def create_ungeplante_ausgabe(ausgabe: UngeplanteAusgabe):
     try:
         cur.execute(
             """
-            INSERT INTO ungeplante_ausgaben (beschreibung, betrag, kategorie, datum, erstellt_am)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO ungeplante_ausgaben (beschreibung, betrag, kategorie, datum, erstellt_am, status)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
             RETURNING *;
             """,
-            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.datum)
+            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.datum, ausgabe.status)
         )
         new_ausgabe = cur.fetchone()
         conn.commit()
@@ -309,11 +337,11 @@ def create_ungeplante_einnahme(einnahme: UngeplanteEinnahme):
     try:
         cur.execute(
             """
-            INSERT INTO ungeplante_einnahmen (beschreibung, betrag, kategorie, datum, erstellt_am)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO ungeplante_einnahmen (beschreibung, betrag, kategorie, datum, erstellt_am, status)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
             RETURNING *;
             """,
-            (einnahme.beschreibung, einnahme.betrag, einnahme.kategorie, einnahme.datum)
+            (einnahme.beschreibung, einnahme.betrag, einnahme.kategorie, einnahme.datum, einnahme.status)
         )
         new_einnahme = cur.fetchone()
         conn.commit()
@@ -340,6 +368,109 @@ def get_ungeplante_einnahmen():
     einnahmen = cur.fetchall()
     conn.close()
     return einnahmen
+    
+# Neue Endpunkte für die Aktualisierung des Status
+@app.put("/ungeplante-ausgaben/{ausgabe_id}/status")
+def update_ausgabe_status(ausgabe_id: int, status_update: StatusUpdate):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_ausgaben
+            SET status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (status_update.status, ausgabe_id)
+        )
+        updated_ausgabe = cur.fetchone()
+        conn.commit()
+        if not updated_ausgabe:
+            raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_ausgabe
+
+@app.put("/ungeplante-einnahmen/{einnahme_id}/status")
+def update_einnahme_status(einnahme_id: int, status_update: StatusUpdate):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_einnahmen
+            SET status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (status_update.status, einnahme_id)
+        )
+        updated_einnahme = cur.fetchone()
+        conn.commit()
+        if not updated_einnahme:
+            raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_einnahme
+
+# Endpunkt für vollständige Aktualisierung einer ungeplanten Ausgabe
+@app.put("/ungeplante-ausgaben/{ausgabe_id}")
+def update_ungeplante_ausgabe(ausgabe_id: int, ausgabe: UngeplanteAusgabe):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_ausgaben
+            SET beschreibung = %s, betrag = %s, kategorie = %s, datum = %s, status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.datum, ausgabe.status, ausgabe_id)
+        )
+        updated_ausgabe = cur.fetchone()
+        conn.commit()
+        if not updated_ausgabe:
+            raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_ausgabe
+
+# Endpunkt für vollständige Aktualisierung einer ungeplanten Einnahme
+@app.put("/ungeplante-einnahmen/{einnahme_id}")
+def update_ungeplante_einnahme(einnahme_id: int, einnahme: UngeplanteEinnahme):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE ungeplante_einnahmen
+            SET beschreibung = %s, betrag = %s, kategorie = %s, datum = %s, status = %s
+            WHERE id = %s
+            RETURNING *;
+            """,
+            (einnahme.beschreibung, einnahme.betrag, einnahme.kategorie, einnahme.datum, einnahme.status, einnahme_id)
+        )
+        updated_einnahme = cur.fetchone()
+        conn.commit()
+        if not updated_einnahme:
+            raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    return updated_einnahme
 
 @app.get("/monatsuebersicht/{monat}/{jahr}", response_model=Monatsuebersicht)
 def get_monatsuebersicht(monat: int, jahr: int):
@@ -501,3 +632,161 @@ async def read_ungeplante_transaktionen(
     db: Session = Depends(get_db)
 ):
     return get_ungeplante_transaktionen(db, monat, jahr)
+    
+@app.delete("/ungeplante-transaktionen/{id}")
+async def delete_ungeplante_transaktion(id: int, db: Session = Depends(get_db)):
+    transaktion = db.query(models.UngeplantTransaktion).filter(
+        models.UngeplantTransaktion.id == id
+    ).first()
+
+    if not transaktion:
+        raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
+
+    db.delete(transaktion)
+    db.commit()
+    return {"message": f"Transaktion mit ID {id} erfolgreich gelöscht"}
+ 
+    
+# Update PUT-Endpunkt für /ungeplante-transaktionen/{id}
+@app.put("/ungeplante-transaktionen/{id}")
+async def update_ungeplante_transaktion(
+    id: int,
+    transaktion_data: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Aktualisiert eine ungeplante Transaktion, einschließlich des Status.
+    """
+    # Die Transaktion aus der Datenbank abrufen
+    transaktion = db.query(models.UngeplantTransaktion).filter(
+        models.UngeplantTransaktion.id == id
+    ).first()
+    
+    if not transaktion:
+        raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
+    
+    # Felder aktualisieren, die im Request enthalten sind
+    update_data = {}
+    
+    # Alle Felder prüfen, die aktualisiert werden könnten
+    possible_fields = ["typ", "beschreibung", "betrag", "kommentar", "monat", 
+                      "jahr", "datum", "status"]
+    
+    for field in possible_fields:
+        if field in transaktion_data:
+            setattr(transaktion, field, transaktion_data[field])
+    
+    # Änderungen in der Datenbank speichern
+    db.commit()
+    db.refresh(transaktion)
+    
+    return transaktion
+    
+@app.get("/jahresuebersicht/{jahr}")
+def get_jahresuebersicht(jahr: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Alle festen Ausgaben abrufen
+    cur.execute("SELECT * FROM feste_ausgaben;")
+    alle_ausgaben = cur.fetchall()
+    
+    # Alle festen Einnahmen abrufen
+    cur.execute("SELECT * FROM feste_einnahmen;")
+    alle_einnahmen = cur.fetchall()
+    
+    # Vorbereitung der Monatsübersicht
+    monats_daten = []
+    
+    # Summen für jeden Monat berechnen
+    for monat in range(1, 13):
+        monats_ausgaben = []
+        monat_summe = 0
+        
+        # Ausgaben für diesen Monat filtern und summieren
+        for ausgabe in alle_ausgaben:
+            # Prüfen, ob der aktuelle Monat in den Zahlungsmonaten ist
+            if monat in ausgabe['zahlungsmonate']:
+                monats_ausgaben.append({
+                    'id': ausgabe['id'],
+                    'beschreibung': ausgabe['beschreibung'],
+                    'betrag': float(ausgabe['betrag']),
+                    'kategorie': ausgabe['kategorie']
+                })
+                monat_summe += float(ausgabe['betrag'])
+        
+        # Einnahmen für diesen Monat filtern und summieren nach Kategorien
+        monat_einnahmen = 0
+        monats_einnahmen = []
+        
+        # Kategorien zum Filtern
+        einnahmen_andrea = 0
+        einnahmen_andreas = 0
+        einnahmen_andere = 0
+        
+        for einnahme in alle_einnahmen:
+            if monat in einnahme['zahlungsmonate']:
+                betrag = float(einnahme['betrag'])
+                monat_einnahmen += betrag
+                
+                # Einnahmen nach Kategorien filtern
+                kategorie = einnahme.get('kategorie', 'Andere')
+                
+                monats_einnahmen.append({
+                    'id': einnahme['id'],
+                    'name': einnahme['name'],
+                    'betrag': betrag,
+                    'kategorie': kategorie
+                })
+                
+                # Nach Kategorien filtern
+                if kategorie == 'Andrea':
+                    einnahmen_andrea += betrag
+                elif kategorie == 'Andreas':
+                    einnahmen_andreas += betrag
+                else:
+                    einnahmen_andere += betrag
+        
+        # Daten für diesen Monat speichern
+        monats_daten.append({
+            'monat': monat,
+            'ausgaben': monats_ausgaben,
+            'ausgaben_summe': monat_summe,
+            'einnahmen': monats_einnahmen,
+            'einnahmen_summe': monat_einnahmen,
+            'einnahmen_andrea': einnahmen_andrea,
+            'einnahmen_andreas': einnahmen_andreas,
+            'einnahmen_andere': einnahmen_andere,
+            'saldo': monat_einnahmen - monat_summe
+        })
+    
+    # Jahres-Mittelwert berechnen
+    jahres_summe_ausgaben = sum(m['ausgaben_summe'] for m in monats_daten)
+    monatliches_mittel_ausgaben = jahres_summe_ausgaben / 12
+    
+    # Jahres-Mittelwert der Einnahmen
+    jahres_summe_einnahmen = sum(m['einnahmen_summe'] for m in monats_daten)
+    monatliches_mittel_einnahmen = jahres_summe_einnahmen / 12
+    
+    # Virtuellen Soll-Kontostand berechnen
+    kumulierter_saldo = 0
+    for monat_daten in monats_daten:
+        # Delta zum Monatsmittel berechnen
+        monat_delta = (monatliches_mittel_ausgaben - monat_daten['ausgaben_summe']) + (monat_daten['einnahmen_summe'] - monatliches_mittel_einnahmen)
+        
+        # Kumulieren
+        kumulierter_saldo += monat_delta
+        
+        # Zum Monatsdatensatz hinzufügen
+        monat_daten['delta_zum_mittel'] = monat_delta
+        monat_daten['virtueller_kontostand'] = kumulierter_saldo
+    
+    conn.close()
+    
+    return {
+        'monats_daten': monats_daten,
+        'jahres_summe_ausgaben': jahres_summe_ausgaben,
+        'monatliches_mittel_ausgaben': monatliches_mittel_ausgaben,
+        'jahres_summe_einnahmen': jahres_summe_einnahmen,
+        'monatliches_mittel_einnahmen': monatliches_mittel_einnahmen
+    }
