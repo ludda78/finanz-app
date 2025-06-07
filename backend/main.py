@@ -61,6 +61,7 @@ class FesteAusgabe(BaseModel):
     zahlungsintervall: str
     zahlungsmonate: list[int]
     startdatum: str
+    enddatum: Optional[str] = None  # Optional mit Default None
     
 class FesteEinnahme(BaseModel):
     id: Optional[int] = None
@@ -140,8 +141,8 @@ def create_feste_ausgabe(ausgabe: FesteAusgabe):
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO feste_ausgaben (beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum) VALUES (%s, %s, %s, %s, %s, %s) RETURNING *;",
-            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.zahlungsintervall, ausgabe.zahlungsmonate, ausgabe.startdatum),
+            "INSERT INTO feste_ausgaben (beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *;",
+            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.zahlungsintervall, ausgabe.zahlungsmonate, ausgabe.startdatum, ausgabe.enddatum),
         )
         neue_ausgabe = cur.fetchone()
         conn.commit()
@@ -161,12 +162,12 @@ def update_feste_ausgabe(ausgabe_id: int, ausgabe: FesteAusgabe):
             """
             UPDATE feste_ausgaben
             SET beschreibung = %s, betrag = %s, kategorie = %s, 
-                zahlungsintervall = %s, zahlungsmonate = %s, startdatum = %s
+                zahlungsintervall = %s, zahlungsmonate = %s, startdatum = %s, enddatum = %s
             WHERE id = %s
             RETURNING *;
             """,
             (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.zahlungsintervall, 
-             ausgabe.zahlungsmonate, ausgabe.startdatum, ausgabe_id),
+             ausgabe.zahlungsmonate, ausgabe.startdatum, ausgabe.enddatum, ausgabe_id),
         )
         updated_ausgabe = cur.fetchone()
         conn.commit()
@@ -477,11 +478,16 @@ def get_monatsuebersicht(monat: int, jahr: int):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Abfrage der festen Ausgaben für den Monat
+    # Datum für den angegebenen Monat und Jahr erstellen
+    erster_des_monats = f"{jahr}-{monat:02d}-01"
+    
+    # Abfrage der festen Ausgaben für den Monat mit Berücksichtigung von Start- und Enddatum
     cur.execute("""
         SELECT * FROM feste_ausgaben
         WHERE %s = ANY(zahlungsmonate)
-        """, (monat,))
+        AND (startdatum IS NULL OR startdatum <= %s)
+        AND (enddatum IS NULL OR enddatum >= %s)
+        """, (monat, erster_des_monats, erster_des_monats))
 
     feste_ausgaben = cur.fetchall()
 
@@ -495,8 +501,6 @@ def get_monatsuebersicht(monat: int, jahr: int):
     feste_einnahmen = [dict(row) for row in feste_einnahmen]
     for einnahme in feste_einnahmen:
         einnahme['betrag'] = float(einnahme['betrag'])
-
-    # print("DEBUG - Konvertierte feste_einnahmen:", feste_einnahmen)  # Testausgabe
 
     # Abfrage der ungeplanten Ausgaben für den Monat
     cur.execute("""
@@ -514,21 +518,31 @@ def get_monatsuebersicht(monat: int, jahr: int):
     """, (monat, jahr))
     ungeplante_einnahmen = cur.fetchall()
 
-	# Umwandeln von datetime in String (ISO 8601 Format)
+    # Konvertiere alle feste_ausgaben zu Dictionaries, um Modifikationen zu erlauben
+    feste_ausgaben = [dict(row) for row in feste_ausgaben]
+    
+    # Umwandeln von datetime und date Objekten in String (ISO 8601 Format)
     for ausgabe in feste_ausgaben:
         if ausgabe['startdatum']:
             ausgabe['startdatum'] = ausgabe['startdatum'].isoformat()
+        if ausgabe['enddatum']:
+            ausgabe['enddatum'] = ausgabe['enddatum'].isoformat()
+            
+    # Konvertiere ungeplante_ausgaben zu Dictionaries für Modifikationen
+    ungeplante_ausgaben = [dict(row) for row in ungeplante_ausgaben]
     for ausgabe in ungeplante_ausgaben:
+        if ausgabe['datum']:
+            ausgabe['datum'] = ausgabe['datum'].isoformat()
         if ausgabe['erstellt_am']:
             ausgabe['erstellt_am'] = ausgabe['erstellt_am'].isoformat()
 
+    # Konvertiere ungeplante_einnahmen zu Dictionaries für Modifikationen
+    ungeplante_einnahmen = [dict(row) for row in ungeplante_einnahmen]
     for einnahme in ungeplante_einnahmen:
+        if einnahme['datum']:
+            einnahme['datum'] = einnahme['datum'].isoformat()
         if einnahme['erstellt_am']:
             einnahme['erstellt_am'] = einnahme['erstellt_am'].isoformat()
-
-    # Berechnung der Gesamtausgaben und Gesamteinnahmen
-    # gesamt_ausgaben = sum([row[2] for row in feste_ausgaben]) + sum([row[2] for row in ungeplante_ausgaben])
-    # gesamt_einnahmen = sum([row[2] for row in ungeplante_einnahmen])
 
     conn.close()
 
@@ -540,8 +554,6 @@ def get_monatsuebersicht(monat: int, jahr: int):
         "feste_einnahmen": feste_einnahmen,
         "ungeplante_ausgaben": ungeplante_ausgaben,
         "ungeplante_einnahmen": ungeplante_einnahmen,
-#        "gesamt_ausgaben": gesamt_ausgaben,
-#        "gesamt_einnahmen": gesamt_einnahmen,
     }
 
 
@@ -695,6 +707,14 @@ def get_jahresuebersicht(jahr: int):
     cur.execute("SELECT * FROM feste_einnahmen;")
     alle_einnahmen = cur.fetchall()
     
+    # Konvertiere alle Ausgaben und Einnahmen zu Dictionaries
+    alle_ausgaben = [dict(row) for row in alle_ausgaben]
+    alle_einnahmen = [dict(row) for row in alle_einnahmen]
+    
+    # Konvertiere betrag zu float für alle Einnahmen
+    for einnahme in alle_einnahmen:
+        einnahme['betrag'] = float(einnahme['betrag'])
+    
     # Vorbereitung der Monatsübersicht
     monats_daten = []
     
@@ -707,13 +727,30 @@ def get_jahresuebersicht(jahr: int):
         for ausgabe in alle_ausgaben:
             # Prüfen, ob der aktuelle Monat in den Zahlungsmonaten ist
             if monat in ausgabe['zahlungsmonate']:
-                monats_ausgaben.append({
-                    'id': ausgabe['id'],
-                    'beschreibung': ausgabe['beschreibung'],
-                    'betrag': float(ausgabe['betrag']),
-                    'kategorie': ausgabe['kategorie']
-                })
-                monat_summe += float(ausgabe['betrag'])
+                # Berechnen des Monatsdatums für Vergleiche
+                monatsdatum = f"{jahr}-{monat:02d}-01"
+                
+                # Konvertiere monatsdatum zu datetime.date Objekt für Vergleich
+                from datetime import datetime
+                monatsdatum_obj = datetime.strptime(monatsdatum, "%Y-%m-%d").date()
+                
+                # Überprüfen, ob die Ausgabe im aktiven Zeitraum liegt
+                start_aktiv = True
+                if ausgabe['startdatum'] is not None:
+                    start_aktiv = ausgabe['startdatum'] <= monatsdatum_obj
+                    
+                end_aktiv = True
+                if ausgabe['enddatum'] is not None:
+                    end_aktiv = ausgabe['enddatum'] >= monatsdatum_obj
+                
+                if start_aktiv and end_aktiv:
+                    monats_ausgaben.append({
+                        'id': ausgabe['id'],
+                        'beschreibung': ausgabe['beschreibung'],
+                        'betrag': float(ausgabe['betrag']),
+                        'kategorie': ausgabe['kategorie']
+                    })
+                    monat_summe += float(ausgabe['betrag'])
         
         # Einnahmen für diesen Monat filtern und summieren nach Kategorien
         monat_einnahmen = 0
