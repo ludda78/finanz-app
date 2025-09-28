@@ -1,5 +1,5 @@
 from models import Monatswert
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from pydantic import BaseModel
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -23,6 +23,9 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from crud import create_ungeplante_transaktion, get_ungeplante_transaktionen
 from enum import Enum
+from crud import berechne_soll_kontostaende_fuer_jahr, verify_jahresuebersicht_calculation
+
+
 
 # Enum für den Status der ungeplanten Ausgaben
 class TransaktionStatus(str, Enum):
@@ -230,7 +233,7 @@ def add_feste_einnahme(einnahme: FesteEinnahme):
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO feste_einnahmen (name, betrag, kategorie, zahlungsmonate)
-        VALUES (%s, %s, %s) RETURNING id
+        VALUES (%s, %s, %s, %s) RETURNING id
     """, (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate))
     
     # Mit RealDictCursor über Spaltennamen zugreifen
@@ -827,3 +830,144 @@ def get_jahresuebersicht(jahr: int):
         'jahres_summe_einnahmen': jahres_summe_einnahmen,
         'monatliches_mittel_einnahmen': monatliches_mittel_einnahmen
     }
+    
+@app.get("/soll-kontostaende/{jahr}")
+def get_soll_kontostaende_jahr(jahr: int):
+    """
+    Hole alle Soll-Kontostände für ein Jahr
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, jahr, monat, kontostand_soll, created_at, updated_at 
+        FROM kontostand_monatsende_soll 
+        WHERE jahr = %s 
+        ORDER BY monat
+    """, (jahr,))
+    kontostaende = cur.fetchall()
+    conn.close()
+    return kontostaende
+
+@app.get("/soll-kontostaende/{jahr}/{monat}")
+def get_soll_kontostand_monat(jahr: int, monat: int):
+    """
+    Hole Soll-Kontostand für einen spezifischen Monat
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, jahr, monat, kontostand_soll, created_at, updated_at 
+        FROM kontostand_monatsende_soll 
+        WHERE jahr = %s AND monat = %s
+    """, (jahr, monat))
+    kontostand = cur.fetchone()
+    conn.close()
+    
+    if not kontostand:
+        raise HTTPException(status_code=404, detail="Soll-Kontostand nicht gefunden")
+    
+    return kontostand
+
+@app.post("/soll-kontostaende/berechnen/{jahr}")
+def berechne_und_speichere_soll_kontostaende(jahr: int):
+    """
+    Berechnet und speichert alle Soll-Kontostände für ein Jahr neu
+    """
+    try:
+        conn = get_db_connection()
+        
+        # Berechne die Soll-Kontostände
+        soll_kontostaende = berechne_soll_kontostaende_fuer_jahr(conn, jahr)
+        
+        # 🔎 Debug-Ausgabe zum Vergleich mit Vue
+        print("\n=== DEBUG: Soll-Kontostände Backend-Berechnung ===")
+        verify_jahresuebersicht_calculation(conn, jahr)
+        print("=== ENDE DEBUG ===\n")
+
+        cur = conn.cursor()
+        
+        for monat, kontostand in enumerate(soll_kontostaende, 1):
+            # Prüfe ob Eintrag bereits existiert
+            cur.execute("""
+                SELECT id FROM kontostand_monatsende_soll 
+                WHERE jahr = %s AND monat = %s
+            """, (jahr, monat))
+            existing = cur.fetchone()
+            
+            if existing:
+                # Update existierenden Eintrag
+                cur.execute("""
+                    UPDATE kontostand_monatsende_soll 
+                    SET kontostand_soll = %s, updated_at = CURRENT_TIMESTAMP 
+                    WHERE jahr = %s AND monat = %s
+                """, (float(kontostand), jahr, monat))
+            else:
+                # Erstelle neuen Eintrag
+                cur.execute("""
+                    INSERT INTO kontostand_monatsende_soll (jahr, monat, kontostand_soll) 
+                    VALUES (%s, %s, %s)
+                """, (jahr, monat, float(kontostand)))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": f"Soll-Kontostände für {jahr} erfolgreich berechnet und gespeichert"}
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=500, detail=f"Fehler beim Berechnen: {str(e)}")
+
+@app.put("/soll-kontostaende/{jahr}/{monat}")
+def update_soll_kontostand(jahr: int, monat: int, kontostand_data: dict):
+    """
+    Manuelles Update eines Soll-Kontostands
+    """
+    kontostand_soll = kontostand_data.get("kontostand_soll")
+    if kontostand_soll is None:
+        raise HTTPException(status_code=400, detail="kontostand_soll ist erforderlich")
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Prüfe ob Eintrag existiert
+    cur.execute("""
+        SELECT id FROM kontostand_monatsende_soll 
+        WHERE jahr = %s AND monat = %s
+    """, (jahr, monat))
+    existing = cur.fetchone()
+    
+    if existing:
+        # Update existierenden Eintrag
+        cur.execute("""
+            UPDATE kontostand_monatsende_soll 
+            SET kontostand_soll = %s, updated_at = CURRENT_TIMESTAMP 
+            WHERE jahr = %s AND monat = %s
+        """, (float(kontostand_soll), jahr, monat))
+    else:
+        # Erstelle neuen Eintrag
+        cur.execute("""
+            INSERT INTO kontostand_monatsende_soll (jahr, monat, kontostand_soll) 
+            VALUES (%s, %s, %s)
+        """, (jahr, monat, float(kontostand_soll)))
+    
+    conn.commit()
+    
+    # Hole den aktualisierten/erstellten Eintrag
+    cur.execute("""
+        SELECT id, jahr, monat, kontostand_soll, created_at, updated_at 
+        FROM kontostand_monatsende_soll 
+        WHERE jahr = %s AND monat = %s
+    """, (jahr, monat))
+    result = cur.fetchone()
+    
+    conn.close()
+    return result
+    
+@app.post("/kontostand-ist")
+def save_ist_kontostand(payload: dict = Body(...), db: Session = Depends(get_db)):
+        return crud.save_ist_kontostand(db, payload)
+
+@app.get("/kontostand-ist/{jahr}/{monat}")
+def get_ist_kontostand(jahr: int, monat: int, db: Session = Depends(get_db)):
+        return crud.get_ist_kontostand(db, jahr, monat)

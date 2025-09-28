@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, date
+from decimal import Decimal
+
 
 class FesteAusgabeSchema(BaseModel):
     id: int
@@ -57,3 +59,22 @@ class UngeplantTransaktionCreate(BaseModel):
     class Config:
         orm_mode = True
     
+class SollKontostandBase(BaseModel):
+    jahr: int
+    monat: int
+    kontostand_soll: Decimal
+
+class SollKontostandCreate(SollKontostandBase):
+    pass
+
+class SollKontostandUpdate(BaseModel):
+    kontostand_soll: Decimal
+
+class SollKontostand(SollKontostandBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+

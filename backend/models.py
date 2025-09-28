@@ -1,7 +1,11 @@
-from sqlalchemy import Column, Integer, String, Date, Numeric, ARRAY, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Numeric, ARRAY, Float, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
-
+from pydantic import BaseModel
+from decimal import Decimal
 from datetime import datetime
+from typing import List, Optional
+from sqlalchemy.sql import func
+
 
 Base = declarative_base()
 
@@ -61,3 +65,17 @@ class UngeplantTransaktion(Base):
     jahr = Column(Integer, nullable=False)
     datum = Column(DateTime, default=datetime.now)
     status = Column(String, default="kein_ausgleich")  # Neues Status-Feld
+    
+class SollKontostandDB(Base):
+    __tablename__ = "soll_kontostaende"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    jahr = Column(Integer, nullable=False)
+    monat = Column(Integer, nullable=False)
+    kontostand_soll = Column(Numeric(10, 2), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        UniqueConstraint('jahr', 'monat', name='unique_jahr_monat'),
+    )
