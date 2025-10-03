@@ -663,86 +663,67 @@ export default {
     },
     
     editAusgabe(ausgabe) {
-      // Tiefe Kopie der Ausgabe erstellen
-      this.editedAusgabe = JSON.parse(JSON.stringify(ausgabe));
-      
-      // Datum-Format anpassen
-      if (typeof this.editedAusgabe.startdatum === 'string' && this.editedAusgabe.startdatum.includes('T')) {
-        this.editedAusgabe.startdatum = this.editedAusgabe.startdatum.split('T')[0];
-      }
-	// Bei jährlicher Zahlung den ausgewählten Monat ins Select-Feld übernehmen
-    if (ausgabe.zahlungsintervall === 'jährlich' && ausgabe.zahlungsmonate && ausgabe.zahlungsmonate.length > 0) {
-      this.editJahresZahlungsmonat = ausgabe.zahlungsmonate[0];
+    // Objekt klonen, damit Änderungen nicht direkt das Original verändern
+    this.editedAusgabe = JSON.parse(JSON.stringify(ausgabe));
+    this.showEditAusgabeForm = true;
+
+    // Startdatum ggf. formatieren
+    if (typeof this.editedAusgabe.startdatum === 'string' && this.editedAusgabe.startdatum.includes('T')) {
+      this.editedAusgabe.startdatum = this.editedAusgabe.startdatum.split('T')[0];
     }
-	
-	if (ausgabe.zahlungsintervall === 'vierteljährlich' && ausgabe.zahlungsmonate && ausgabe.zahlungsmonate.length > 0) {
-      // Wir nehmen den ersten Monat im Array als Startmonat
-      const possibleStartMonths = [1, 2, 3];
-      const firstMonth = ausgabe.zahlungsmonate[0];
-      
-      // Prüfen, ob der erste Monat ein gültiger Startmonat ist
-      if (possibleStartMonths.includes(firstMonth)) {
-        this.editVierteljahrStartmonat = firstMonth;
-      } else {
-        // Falls nicht, versuchen wir den Startmonat anhand des Musters zu erkennen
-        const sortedMonths = [...ausgabe.zahlungsmonate].sort((a, b) => a - b);
-        if (sortedMonths.length === 4) {
-          // Prüfen, ob die Monate einem 3-Monats-Muster folgen
-          for (let start of possibleStartMonths) {
-            const pattern = [
-              start,
-              start + 3 > 12 ? start + 3 - 12 : start + 3,
-              start + 6 > 12 ? start + 6 - 12 : start + 6,
-              start + 9 > 12 ? start + 9 - 12 : start + 9
-            ].sort((a, b) => a - b);
-            
-            // Prüfen, ob die Monate dem Muster entsprechen
-            if (JSON.stringify(pattern) === JSON.stringify(sortedMonths)) {
-              this.editVierteljahrStartmonat = start;
-              break;
-            }
-          }
-        }
-      }
+
+    // Falls jährlich → Dropdown vorbelegen
+    if (this.editedAusgabe.zahlungsintervall === 'jährlich') {
+      this.editJahresZahlungsmonat = this.editedAusgabe.zahlungsmonate?.[0] || null;
     }
-      
-      this.showEditAusgabeForm = true;
-    },
+
+    // Falls vierteljährlich → Startmonat übernehmen
+    if (this.editedAusgabe.zahlungsintervall === 'vierteljährlich') {
+      this.editVierteljahrStartmonat = this.editedAusgabe.zahlungsmonate?.[0] || 1;
+      this.setEditQuarterlyPaymentMonths();
+    }
+  },
     
     async updateFesteAusgabe() {
       try {
-        // Aktualisiere Zahlungsmonate wenn nicht benutzerdefiniert
         if (this.editedAusgabe.zahlungsintervall !== "custom") {
           const interval = this.editedAusgabe.zahlungsintervall;
+
           if (interval === "monatlich") {
-            this.editedAusgabe.zahlungsmonate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+            this.editedAusgabe.zahlungsmonate = [1,2,3,4,5,6,7,8,9,10,11,12];
+
           } else if (interval === "zweimonatlich") {
-            this.editedAusgabe.zahlungsmonate = [1, 3, 5, 7, 9, 11];
+            this.editedAusgabe.zahlungsmonate = [1,3,5,7,9,11];
+
           } else if (interval === "vierteljährlich") {
-            this.editedAusgabe.zahlungsmonate = [1, 4, 7, 10];
+            const s = parseInt(this.editVierteljahrStartmonat) || 1;
+            const wrap = (m) => ((m - 1) % 12) + 1;
+            this.editedAusgabe.zahlungsmonate = [s, wrap(s+3), wrap(s+6), wrap(s+9)];
+
           } else if (interval === "halbjährlich") {
             this.editedAusgabe.zahlungsmonate = [1, 7];
+
           } else if (interval === "jährlich") {
-            this.editedAusgabe.zahlungsmonate = [1];
+            const m = parseInt(this.editJahresZahlungsmonat);
+            this.editedAusgabe.zahlungsmonate = m ? [m] : [];
           }
         }
-        
-        await axios.put(
-          // `http://192.168.178.138:8000/feste-ausgaben/${this.editedAusgabe.id}`, 
-          `${apiUrlAusgabe}/${this.editedAusgabe.id}`,
-          this.editedAusgabe
-        );
-        
-        // Aktualisierte Liste neu laden
+
+        // Normalize: unique & sort
+        this.editedAusgabe.zahlungsmonate = [...new Set(
+          (this.editedAusgabe.zahlungsmonate || []).map(n => parseInt(n))
+        )].sort((a, b) => a - b);
+
+        await axios.put(`${apiUrlAusgabe}/${this.editedAusgabe.id}`, this.editedAusgabe);
+
         await this.fetchFesteAusgaben();
-        
-        // Modal schließen
         this.showEditAusgabeForm = false;
       } catch (error) {
         console.error("Fehler beim Aktualisieren der Ausgabe:", error);
-        alert("Fehler beim Aktualisieren: " + (error._response?.data?.detail || error.message));
+        alert("Fehler beim Aktualisieren: " + (error.response?.data?.detail || error.message));
       }
     },
+
     
     async deleteAusgabe(id) {
       if (!confirm("Möchtest du diese feste Ausgabe wirklich löschen?")) return;
@@ -860,28 +841,28 @@ watch: {
     }
   },
   
-  'editedAusgabe.zahlungsintervall': function(newVal) {
-    // Ähnliche Logik für die Bearbeitung
+ 'editedAusgabe.zahlungsintervall': function(newVal) {
     if (newVal === 'jährlich') {
-      if (this.editedAusgabe.zahlungsmonate && this.editedAusgabe.zahlungsmonate.length > 0) {
+      if (Array.isArray(this.editedAusgabe.zahlungsmonate) && this.editedAusgabe.zahlungsmonate.length > 0) {
+        // vorhandenen Wert übernehmen
         this.editJahresZahlungsmonat = this.editedAusgabe.zahlungsmonate[0];
       } else {
-        this.editJahresZahlungsmonat = 1;
-        this.editedAusgabe.zahlungsmonate = [1];
+        // ⚠️ hier KEIN Fallback auf 1 erzwingen
+        // nur editJahresZahlungsmonat auf null setzen
+        this.editJahresZahlungsmonat = null;
+        this.editedAusgabe.zahlungsmonate = [];
       }
     } else if (newVal === 'vierteljährlich') {
-      this.editVierteljahrStartmonat = 1;
+      this.editVierteljahrStartmonat = this.editedAusgabe.zahlungsmonate?.[0] || 1;
       this.setEditQuarterlyPaymentMonths();
     } else if (newVal === 'zweimonatlich') {
       this.editedAusgabe.zahlungsmonate = [1, 3, 5, 7, 9, 11];
     } else if (newVal === 'halbjährlich') {
       this.editedAusgabe.zahlungsmonate = [1, 7];
     } else if (newVal === 'monatlich') {
-      this.editedAusgabe.zahlungsmonate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    } else if (newVal === 'custom') {
-      // Bei benutzerdefiniert alle Checkboxen aktivieren/Monate lassen
-    }
-  },
+        this.editedAusgabe.zahlungsmonate = [1,2,3,4,5,6,7,8,9,10,11,12];
+      }
+    },
   
   // Watcher für den jährlichen Zahlungsmonat
   'jahresZahlungsmonat': function(newVal) {
