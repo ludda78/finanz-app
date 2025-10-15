@@ -146,7 +146,7 @@
                 </div>
               </td>
               <td>
-                <button @click="editAusgabe(ausgabe)" class="edit-button">Bearbeiten</button>
+                <button @click="editAusgabe(ausgabe), console.log('Edit clicked');" class="edit-button">Bearbeiten</button>
                 <button @click="deleteAusgabe(ausgabe.id)" class="delete-button">Löschen</button>
               </td>
             </tr>
@@ -894,3 +894,44 @@ watch: {
  }
 }
 </script>
+<style scoped>
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 10px;
+  max-width: 600px;
+  width: 90%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.save-button, .cancel-button, .edit-button, .delete-button, .add-button {
+  padding: 8px 12px;
+  margin: 4px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.save-button { background-color: #4CAF50; color: white; }
+.cancel-button { background-color: #ccc; }
+.edit-button { background-color: #2196F3; color: white; }
+.delete-button { background-color: #f44336; color: white; }
+.add-button { background-color: #4CAF50; color: white; }
+
+.modal-content h3 {
+  margin-top: 0;
+}
+</style>

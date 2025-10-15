@@ -78,3 +78,34 @@ class SollKontostand(SollKontostandBase):
     class Config:
         from_attributes = True
 
+class AusgabeAenderungBase(BaseModel):
+    gueltig_ab: date
+    betrag: float
+
+class AusgabeAenderungCreate(AusgabeAenderungBase):
+    pass
+
+class AusgabeAenderung(AusgabeAenderungBase):
+    id: int
+    ausgabe_id: int
+    erstellt_am: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class EinnahmeAenderungBase(BaseModel):
+    gueltig_ab: date
+    betrag: float
+
+class EinnahmeAenderungCreate(EinnahmeAenderungBase):
+    pass
+
+class EinnahmeAenderung(EinnahmeAenderungBase):
+    id: int
+    einnahme_id: int
+    erstellt_am: datetime
+
+    class Config:
+        orm_mode = True
+

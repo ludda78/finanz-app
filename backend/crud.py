@@ -2,10 +2,11 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from datetime import datetime
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 from typing import List, Optional
 from decimal import Decimal
 from sqlalchemy import text
+from datetime import date
 
 DEBUG = False  # zentraler Schalter
 
@@ -54,115 +55,131 @@ def get_ungeplante_transaktionen(db: Session, monat: int, jahr: int):
     ).all()
 
 def berechne_soll_kontostaende_fuer_jahr(conn, jahr):
-    if DEBUG:
-        debug_alle_kategorien(conn)
-
+    """
+    Berechnet mehrere Kennzahlen:
+    - Summe Ausgaben / Einnahmen
+    - Monatssaldo (Ein - Aus)
+    - Virtueller Kontostand (kumulativ)
+    - Delta zum Ausgaben-Mittel
+    - Kontostand Monatsende Soll
+    """
     monatliches_mittel_ausgaben = get_monatliches_mittel_feste_ausgaben_ohne_andrea(conn, jahr)
+
     if DEBUG:
         print(f"\n=== DEBUG: Berechne Soll-Kontostände für {jahr} ===")
-        print(f"Monatliches Mittel feste Ausgaben (ohne Andrea): {monatliches_mittel_ausgaben:.2f} €")
-        print(f"\n{'Monat':<6} {'Monatsausgaben':<15} {'Delta':<12} {'Kumulativ':<12}")
-        print("-" * 50)
+        print(f"Monatliches Mittel (ohne Andrea): {monatliches_mittel_ausgaben:.2f} €")
+        print(f"\n{'Monat':<6} {'Einnahmen':<12} {'Ausgaben':<12} "
+              f"{'Saldo':<12} {'Virtuell':<12} {'DeltaMittel':<12} {'SollKto':<12}")
+        print("-" * 80)
 
-    soll_kontostaende = []
-    kumulatives_delta = 0
-    
+    ergebnisse = []
+    virtueller_kontostand = 0
+    kumulatives_delta = 0  # für Soll-Kontostand
+
     for monat in range(1, 13):
-        feste_ausgaben_monat = get_feste_ausgaben_monat_jahresuebersicht(conn, jahr, monat)
-        delta = monatliches_mittel_ausgaben - feste_ausgaben_monat
-        kumulatives_delta += delta
-        soll_kontostaende.append(kumulatives_delta)
+        ausgaben = get_feste_ausgaben_monat_jahresuebersicht(conn, jahr, monat)
+        einnahmen = get_feste_einnahmen_monat_jahresuebersicht(conn, jahr, monat)
+
+        saldo = einnahmen - ausgaben
+        virtueller_kontostand += saldo
+
+        # Abweichung vom Mittel
+        delta_mittel = monatliches_mittel_ausgaben - ausgaben
+        kumulatives_delta += delta_mittel
+
+        ergebnisse.append({
+            "monat": monat,
+            "ausgaben": ausgaben,
+            "einnahmen": einnahmen,
+            "saldo": saldo,
+            "virtueller_kontostand": virtueller_kontostand,
+            "delta_mittel": delta_mittel,
+            "soll_kontostand": kumulatives_delta
+        })
+
         if DEBUG:
-            print(f"{monat:<6} {feste_ausgaben_monat:<15.2f} {delta:<12.2f} {kumulatives_delta:<12.2f}")
-    
+            print(f"{monat:<6} {einnahmen:<12.2f} {ausgaben:<12.2f} "
+                  f"{saldo:<12.2f} {virtueller_kontostand:<12.2f} "
+                  f"{delta_mittel:<12.2f} {kumulatives_delta:<12.2f}")
+
     if DEBUG:
         print("=== ENDE DEBUG Soll-Kontostände ===\n")
-    
-    return soll_kontostaende
 
-def get_monatliches_mittel_feste_ausgaben_ohne_andrea(conn, jahr):
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT * FROM feste_ausgaben 
-        WHERE kategorie IS NULL OR LOWER(kategorie) NOT LIKE %s
-    """, ('%andrea%',))
-    alle_ausgaben = [dict(row) for row in cur.fetchall()]
-    
-    if DEBUG:
-        print("\n=== DEBUG: Berechnung Monatsmittel feste Ausgaben (ohne *Andrea*) ===")
-    jahres_summe_ausgaben = 0
-    
-    for monat in range(1, 13):
-        monat_summe = 0
-        monatsdatum = f"{jahr}-{monat:02d}-01"
-        from datetime import datetime
-        monatsdatum_obj = datetime.strptime(monatsdatum, "%Y-%m-%d").date()
-        
-        for ausgabe in alle_ausgaben:
-            if monat in ausgabe['zahlungsmonate']:
-                start_aktiv = ausgabe['startdatum'] is None or ausgabe['startdatum'] <= monatsdatum_obj
-                end_aktiv = ausgabe['enddatum'] is None or ausgabe['enddatum'] >= monatsdatum_obj
-                if start_aktiv and end_aktiv:
-                    monat_summe += float(ausgabe['betrag'])
-        
-        if DEBUG:
-            print(f"Monat {monat:2d}: {monat_summe:.2f} €")
-        jahres_summe_ausgaben += monat_summe
-    
-    monatliches_mittel = jahres_summe_ausgaben / 12
-    if DEBUG:
-        print(f"Jahressumme Ausgaben: {jahres_summe_ausgaben:.2f} €")
-        print(f"Monatliches Mittel: {monatliches_mittel:.2f} €")
-        print("=== ENDE DEBUG Monatsmittel ===\n")
-    
-    return monatliches_mittel
+    return ergebnisse
 
 
-
-
-def get_feste_ausgaben_monat_jahresuebersicht(conn, jahr, monat):
+def get_monatliches_mittel_feste_ausgaben_ohne_andrea(db, jahr: int) -> float:
     """
-    Hole die festen Ausgaben für einen Monat (ohne alle Kategorien, die 'Andrea' enthalten)
+    Berechne den durchschnittlichen Monatswert der festen Ausgaben (ohne Andrea)
+    über das gesamte Jahr.
     """
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT * FROM feste_ausgaben 
-        WHERE kategorie IS NULL OR LOWER(kategorie) NOT LIKE %s
-    """, ('%andrea%',))
-    alle_ausgaben = [dict(row) for row in cur.fetchall()]
-    
-    monat_summe = 0
-    monatsdatum = f"{jahr}-{monat:02d}-01"
-    from datetime import datetime
-    monatsdatum_obj = datetime.strptime(monatsdatum, "%Y-%m-%d").date()
-    
-    if DEBUG:
-        print(f"\n--- DEBUG: Monat {monat:02d}/{jahr} ---")
-    
-    for ausgabe in alle_ausgaben:
-        if monat in ausgabe['zahlungsmonate']:
-            start_aktiv = ausgabe['startdatum'] is None or ausgabe['startdatum'] <= monatsdatum_obj
-            end_aktiv = ausgabe['enddatum'] is None or ausgabe['enddatum'] >= monatsdatum_obj
-            
-            if start_aktiv and end_aktiv:
-                betrag = float(ausgabe['betrag'])
-                monat_summe += betrag
-                if DEBUG:
-                    print(f"✔ ID {ausgabe['id']}: {ausgabe['beschreibung']} "
-                          f"({ausgabe['kategorie']}) {betrag:.2f} €")
-            else:
-                if DEBUG:
-                    print(f"✘ IGNORIERT: {ausgabe['beschreibung']} – "
-                          f"außerhalb Zeitraum (Start: {ausgabe['startdatum']}, End: {ausgabe['enddatum']})")
-        else:
-            if DEBUG:
-                print(f"✘ IGNORIERT: {ausgabe['beschreibung']} – nicht im Monat {monat}")
-    
-    if DEBUG:
-        print(f"Summe Monat {monat:02d}: {monat_summe:.2f} €")
-        print(f"--- ENDE DEBUG Monat {monat:02d} ---\n")
-    
-    return monat_summe
+    try:
+        gesamt = 0.0
+        monate_mit_daten = 0
+
+        for monat in range(1, 13):
+            # Gesamt-Ausgaben dieses Monats berechnen (gleiche Logik wie in der Jahresübersicht)
+            result = db.execute(text("""
+                SELECT COALESCE(SUM(
+                    COALESCE(
+                        (SELECT betrag 
+                         FROM ausgaben_aenderungen aa
+                         WHERE aa.ausgabe_id = fa.id
+                           AND aa.gueltig_ab <= :datum
+                         ORDER BY aa.gueltig_ab DESC
+                         LIMIT 1),
+                        fa.betrag
+                    )
+                ), 0)
+                FROM feste_ausgaben fa
+                WHERE (fa.kategorie IS NULL OR LOWER(fa.kategorie) NOT LIKE '%andrea%')
+                  AND (fa.startdatum IS NULL OR fa.startdatum <= :datum)
+                  AND (fa.enddatum IS NULL OR fa.enddatum >= :datum)
+                  AND :monat = ANY(fa.zahlungsmonate)
+            """), {"datum": date(jahr, monat, 1), "monat": monat}).scalar()
+
+            gesamt += float(result or 0)
+            monate_mit_daten += 1
+
+        if monate_mit_daten == 0:
+            return 0.0
+
+        mittelwert = gesamt / monate_mit_daten
+        print(f"🔹 Berechneter Monatsdurchschnitt (ohne Andrea) für {jahr}: {mittelwert:.2f} €")
+        return mittelwert
+
+    except Exception as e:
+        print("❌ Fehler in get_monatliches_mittel_feste_ausgaben_ohne_andrea:", e)
+        return 0.0
+
+
+
+
+
+
+def get_feste_ausgaben_monat_jahresuebersicht(db, jahr, monat):
+    monatsdatum = date(jahr, monat, 1)
+    query = text("""
+        SELECT SUM(
+          COALESCE(
+            (SELECT betrag
+             FROM ausgaben_aenderungen aa
+             WHERE aa.ausgabe_id = fa.id
+               AND aa.gueltig_ab <= :datum
+             ORDER BY aa.gueltig_ab DESC
+             LIMIT 1),
+            fa.betrag
+          )
+        ) AS summe
+        FROM feste_ausgaben fa
+        WHERE (fa.startdatum IS NULL OR fa.startdatum <= :datum)
+          AND (fa.enddatum IS NULL OR fa.enddatum >= :datum)
+          AND :monat = ANY(fa.zahlungsmonate)
+          AND (fa.kategorie IS NULL OR LOWER(fa.kategorie) NOT LIKE '%andrea%')
+    """)
+    result = db.execute(query, {"datum": monatsdatum, "monat": monat}).scalar()
+    return float(result or 0)
+
 
 
 
@@ -324,4 +341,72 @@ def get_ist_kontostand(db, jahr: int, monat: int):
     """)
     result = db.execute(stmt, {"jahr": jahr, "monat": monat}).fetchone()
     return dict(result._mapping) if result else {"ist_kontostand": None}
+
+# Ausgaben-Änderungen
+def create_ausgabe_aenderung(db, ausgabe_id: int, aenderung: schemas.AusgabeAenderungCreate):
+    cur = db.cursor()
+    cur.execute("""
+        INSERT INTO ausgaben_aenderungen (ausgabe_id, gueltig_ab, betrag)
+        VALUES (%s, %s, %s)
+        RETURNING id, ausgabe_id, gueltig_ab, betrag, erstellt_am
+    """, (ausgabe_id, aenderung.gueltig_ab, aenderung.betrag))
+    result = cur.fetchone()
+    db.commit()
+    return dict(result._mapping)
+
+def get_ausgabe_aenderungen(db, ausgabe_id: int):
+    cur = db.cursor()
+    cur.execute("""
+        SELECT * FROM ausgaben_aenderungen
+        WHERE ausgabe_id = %s
+        ORDER BY gueltig_ab ASC
+    """, (ausgabe_id,))
+    return [dict(row._mapping) for row in cur.fetchall()]
+
+# Einnahmen-Änderungen
+def create_einnahme_aenderung(db, einnahme_id: int, aenderung: schemas.EinnahmeAenderungCreate):
+    cur = db.cursor()
+    cur.execute("""
+        INSERT INTO einnahmen_aenderungen (einnahme_id, gueltig_ab, betrag)
+        VALUES (%s, %s, %s)
+        RETURNING id, einnahme_id, gueltig_ab, betrag, erstellt_am
+    """, (einnahme_id, aenderung.gueltig_ab, aenderung.betrag))
+    result = cur.fetchone()
+    db.commit()
+    return dict(result._mapping)
+
+def get_einnahme_aenderungen(db, einnahme_id: int):
+    cur = db.cursor()
+    cur.execute("""
+        SELECT * FROM einnahmen_aenderungen
+        WHERE einnahme_id = %s
+        ORDER BY gueltig_ab ASC
+    """, (einnahme_id,))
+    return [dict(row._mapping) for row in cur.fetchall()]
+
+def get_feste_einnahmen_monat_jahresuebersicht(db, jahr, monat):
+    """
+    Liefert die Summe aller festen Einnahmen für einen Monat.
+    - Berücksichtigt Änderungen aus einnahmen_aenderungen
+    - Ignoriert Kategorie 'Andrea'
+    """
+    monatsdatum = date(jahr, monat, 1)
+    query = text("""
+        SELECT SUM(
+          COALESCE(
+            (SELECT betrag
+             FROM einnahmen_aenderungen ea
+             WHERE ea.einnahme_id = fe.id
+               AND ea.gueltig_ab <= :datum
+             ORDER BY ea.gueltig_ab DESC
+             LIMIT 1),
+            fe.betrag
+          )
+        ) AS summe
+        FROM feste_einnahmen fe
+        WHERE :monat = ANY(fe.zahlungsmonate)
+          AND (fe.kategorie IS NULL OR LOWER(fe.kategorie) NOT LIKE '%andrea%')
+    """)
+    result = db.execute(query, {"datum": monatsdatum, "monat": monat}).scalar()
+    return float(result or 0)
 
