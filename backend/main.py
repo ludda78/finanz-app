@@ -64,8 +64,8 @@ class FesteAusgabe(BaseModel):
     kategorie: str
     zahlungsintervall: str
     zahlungsmonate: list[int]
-    startdatum: str
-    enddatum: Optional[str] = None  # Optional mit Default None
+    startdatum: date
+    enddatum: Optional[date] = None  # Optional mit Default None
     
 class FesteEinnahme(BaseModel):
     id: Optional[int] = None
@@ -73,6 +73,8 @@ class FesteEinnahme(BaseModel):
     betrag: float
     kategorie: Optional[str] = None  # New field
     zahlungsmonate: List[int]
+    startdatum: Optional[date] = None
+    enddatum: Optional[date] = None
 
 # Modell für Monatsübersicht
 class Monatsuebersicht(BaseModel):
@@ -160,29 +162,44 @@ def create_feste_ausgabe(ausgabe: FesteAusgabe):
 @app.put("/feste-ausgaben/{ausgabe_id}")
 def update_feste_ausgabe(ausgabe_id: int, ausgabe: FesteAusgabe):
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cur.execute(
-            """
+        cur.execute("""
             UPDATE feste_ausgaben
-            SET beschreibung = %s, betrag = %s, kategorie = %s, 
-                zahlungsintervall = %s, zahlungsmonate = %s, startdatum = %s, enddatum = %s
+            SET 
+                beschreibung = %s,
+                betrag = %s,
+                kategorie = %s,
+                zahlungsintervall = %s,
+                zahlungsmonate = %s,
+                startdatum = %s,
+                enddatum = %s
             WHERE id = %s
-            RETURNING *;
-            """,
-            (ausgabe.beschreibung, ausgabe.betrag, ausgabe.kategorie, ausgabe.zahlungsintervall, 
-             ausgabe.zahlungsmonate, ausgabe.startdatum, ausgabe.enddatum, ausgabe_id),
-        )
+            RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum, erstellt_am;
+        """, (
+            ausgabe.beschreibung,
+            ausgabe.betrag,
+            ausgabe.kategorie,
+            ausgabe.zahlungsintervall,
+            ausgabe.zahlungsmonate,
+            ausgabe.startdatum,
+            ausgabe.enddatum,  # ✅ optional möglich
+            ausgabe_id
+        ))
         updated_ausgabe = cur.fetchone()
         conn.commit()
+
         if not updated_ausgabe:
             raise HTTPException(status_code=404, detail="Ausgabe nicht gefunden")
+
+        return dict(updated_ausgabe)
+
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Fehler beim Aktualisieren: {e}")
+
     finally:
         conn.close()
-    return updated_ausgabe
 
 @app.delete("/feste-ausgaben/{ausgabe_id}")
 def delete_feste_ausgabe(ausgabe_id: int):
@@ -205,44 +222,44 @@ def delete_feste_ausgabe(ausgabe_id: int):
 @app.get("/feste_einnahmen")
 def get_feste_einnahmen():
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, betrag, kategorie, zahlungsmonate FROM feste_einnahmen")
-    
-    # Mit RealDictCursor sind die Ergebnisse bereits Dictionaries
-    einnahmen = cur.fetchall()
-    
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT id, name, betrag, kategorie, zahlungsmonate, startdatum, enddatum
+          FROM feste_einnahmen
+        ORDER BY id;
+    """)
+    rows = [dict(r) for r in cur.fetchall()]
+    for r in rows:
+        r["betrag"] = float(r["betrag"])
+        if r.get("startdatum"): r["startdatum"] = r["startdatum"].isoformat()
+        if r.get("enddatum"):   r["enddatum"]   = r["enddatum"].isoformat()
     conn.close()
-    
-    if not einnahmen:
-        raise HTTPException(status_code=404, detail="Keine festen Einnahmen gefunden")
-    
-    # Bei RealDictCursor könnte es sein, dass die Datentypen nicht JSON-serialisierbar sind
-    # Wir konvertieren sie daher explizit
-    for item in einnahmen:
-        if "betrag" in item and item["betrag"] is not None:
-            # Decimal zu float konvertieren für JSON-Serialisierung
-            item["betrag"] = float(item["betrag"])
-        if "zahlungsmonate" in item and item["zahlungsmonate"] is not None:
-            # Stelle sicher, dass zahlungsmonate serialisierbar ist
-            item["zahlungsmonate"] = list(item["zahlungsmonate"])
-    
-    return {"feste_einnahmen": einnahmen}
+    return {"feste_einnahmen": rows}
 
 @app.post("/feste_einnahmen/")
 def add_feste_einnahme(einnahme: FesteEinnahme):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO feste_einnahmen (name, betrag, kategorie, zahlungsmonate)
-        VALUES (%s, %s, %s, %s) RETURNING id
-    """, (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate))
-    
-    # Mit RealDictCursor über Spaltennamen zugreifen
-    result = cur.fetchone()
-    new_id = result['id']  # Hier den Spaltennamen 'id' verwenden
-    
-    conn.commit()
-    conn.close()
+    try:
+        betrag = float(einnahme.betrag)
+        monate = [int(m) for m in (einnahme.zahlungsmonate or [])]
+        start = einnahme.startdatum
+        ende = einnahme.enddatum
+
+        cur.execute("""
+            INSERT INTO feste_einnahmen
+                (name, betrag, kategorie, zahlungsmonate, startdatum, enddatum)
+            VALUES (%s,   %s,     %s,        %s,             %s,        %s)
+            RETURNING id;
+        """, (einnahme.name, betrag, einnahme.kategorie, monate, start, ende))
+        new_id = cur.fetchone()["id"]
+        conn.commit()
+        return {"message": "Einnahme hinzugefügt", "id": new_id}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=f"Insert fehlgeschlagen: {e}")
+    finally:
+        conn.close()
     
     return {
         "message": "Einnahme hinzugefügt", 
@@ -260,22 +277,35 @@ def update_feste_einnahme(einnahme_id: int, einnahme: FesteEinnahme):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+         # Typen sicherstellen
+        betrag = float(einnahme.betrag)
+        monate = [int(m) for m in (einnahme.zahlungsmonate or [])]
+        start = einnahme.startdatum  # schon date durch Pydantic
+        ende = einnahme.enddatum     # schon date durch Pydantic
+        
         cur.execute(
             """
             UPDATE feste_einnahmen
-            SET name = %s, betrag = %s, kategorie = %s, zahlungsmonate = %s
-            WHERE id = %s
-            RETURNING *;
+               SET name = %s,
+                   betrag = %s,
+                   kategorie = %s,
+                   zahlungsmonate = %s,
+                   startdatum = %s,
+                   enddatum = %s
+             WHERE id = %s
+         RETURNING *;
             """,
-            (einnahme.name, einnahme.betrag, einnahme.kategorie, einnahme.zahlungsmonate, einnahme_id),
+            (einnahme.name, betrag, einnahme.kategorie, monate, start, ende, einnahme_id),
         )
-        updated_einnahme = cur.fetchone()
+        updated = cur.fetchone()
         conn.commit()
-        if not updated_einnahme:
+        if not updated:
             raise HTTPException(status_code=404, detail="Einnahme nicht gefunden")
+        return {"message": "OK"}
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        # wichtig: nicht „roh“ zurückgeben, sondern klar
+        raise HTTPException(status_code=400, detail=f"Update fehlgeschlagen: {e}")
     finally:
         conn.close()
     return updated_einnahme
@@ -495,16 +525,22 @@ def get_monatsuebersicht(monat: int, jahr: int):
 
     feste_ausgaben = cur.fetchall()
 
-    # Feste Einnahmen abrufen
+     # Feste Einnahmen abrufen (mit Datumskorridor)
     cur.execute("""
         SELECT * FROM feste_einnahmen
         WHERE %s = ANY(zahlungsmonate)
-    """, (monat,))
-    feste_einnahmen = cur.fetchall()
-    # Umwandlung von RealDictRow in Dictionary + Decimal in float
-    feste_einnahmen = [dict(row) for row in feste_einnahmen]
+          AND (startdatum IS NULL OR startdatum <= %s)
+          AND (enddatum   IS NULL OR enddatum   >= %s)
+    """, (monat, erster_des_monats, erster_des_monats))
+    
+    feste_einnahmen = [dict(row) for row in cur.fetchall()]
+   
     for einnahme in feste_einnahmen:
         einnahme['betrag'] = float(einnahme['betrag'])
+        if einnahme.get('startdatum'):
+            einnahme['startdatum'] = einnahme['startdatum'].isoformat()
+        if einnahme.get('enddatum'):
+            einnahme['enddatum'] = einnahme['enddatum'].isoformat()
 
     # Abfrage der ungeplanten Ausgaben für den Monat
     cur.execute("""
@@ -711,7 +747,7 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
     try:
        # 1️⃣ Jahresdurchschnitt (ohne Andrea) einmalig holen
         mittelwert = float(crud.get_monatliches_mittel_feste_ausgaben_ohne_andrea(db, jahr) or 0)
-        print(f"📊 Mittelwert feste Ausgaben (ohne Andrea) für {jahr}: {mittelwert:.2f} €")
+        # print(f"📊 Mittelwert feste Ausgaben (ohne Andrea) für {jahr}: {mittelwert:.2f} €")
 
         # --- 2️⃣ Monatsweise Berechnung aller Kennzahlen ---
         ergebnisse = []
@@ -732,13 +768,13 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
             # Soll-Kontostand: kumulierte Abweichung über das Jahr
             kumulatives_delta += delta_mittel
 # --- 🧾 Debug-Log ---
-            print(
-                f"[{jahr}-{monat:02d}] "
-                f"Ausgaben={ausgaben:.2f} €, Mittel={mittelwert:.2f} €, "
-                f"Δ={delta_mittel:.2f} €, Kumuliert={kumulatives_delta:.2f}, "
-                f"Einnahmen={einnahmen:.2f} €, Saldo={saldo:.2f}, "
-                f"Virtuell={virtueller_kontostand:.2f}"
-            )
+            # print(
+                # f"[{jahr}-{monat:02d}] "
+                # f"Ausgaben={ausgaben:.2f} €, Mittel={mittelwert:.2f} €, "
+                # f"Δ={delta_mittel:.2f} €, Kumuliert={kumulatives_delta:.2f}, "
+                # f"Einnahmen={einnahmen:.2f} €, Saldo={saldo:.2f}, "
+                # f"Virtuell={virtueller_kontostand:.2f}"
+            # )
 
             ergebnisse.append({
                 "monat": monat,
@@ -768,8 +804,7 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
                     ) AS betrag,
                     fa.kategorie
                 FROM feste_ausgaben fa
-                WHERE (fa.kategorie IS NULL OR LOWER(fa.kategorie) NOT LIKE '%andrea%')
-                  AND (fa.startdatum IS NULL OR fa.startdatum <= :datum)
+                WHERE (fa.startdatum IS NULL OR fa.startdatum <= :datum)
                   AND (fa.enddatum IS NULL OR fa.enddatum >= :datum)
                   AND :monat = ANY(fa.zahlungsmonate)
                 ORDER BY fa.kategorie, fa.beschreibung
@@ -802,7 +837,6 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
                     fe.kategorie
                 FROM feste_einnahmen fe
                 WHERE :monat = ANY(fe.zahlungsmonate)
-                  AND (fe.kategorie IS NULL OR LOWER(fe.kategorie) NOT LIKE '%andrea%')
                   AND (fe.startdatum IS NULL OR fe.startdatum <= :datum)
                   AND (fe.enddatum IS NULL OR fe.enddatum >= :datum)
                 ORDER BY fe.kategorie, fe.name
@@ -892,9 +926,9 @@ def berechne_und_speichere_soll_kontostaende(jahr: int):
         soll_kontostaende = berechne_soll_kontostaende_fuer_jahr(conn, jahr)
         
         # 🔎 Debug-Ausgabe zum Vergleich mit Vue
-        print("\n=== DEBUG: Soll-Kontostände Backend-Berechnung ===")
+        # print("\n=== DEBUG: Soll-Kontostände Backend-Berechnung ===")
         verify_jahresuebersicht_calculation(conn, jahr)
-        print("=== ENDE DEBUG ===\n")
+        # print("=== ENDE DEBUG ===\n")
 
         cur = conn.cursor()
         

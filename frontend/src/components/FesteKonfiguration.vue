@@ -237,7 +237,19 @@
               <label for="edit-startdatum">Startdatum:</label>
               <input id="edit-startdatum" type="date" v-model="editedAusgabe.startdatum" required />
             </div>
-            
+            <div class="form-group mb-3">
+              <label for="edit-enddatum">Enddatum (optional)</label>
+              <input
+                 type="date"
+                 id="edit-enddatum"
+                 v-model="editedAusgabe.enddatum"
+                 class="form-control"
+               />
+              <small class="text-muted">
+              Wenn kein Enddatum gesetzt ist, bleibt die Ausgabe unbegrenzt aktiv.
+              </small>
+            </div>
+
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
               <button type="button" @click="showEditAusgabeForm = false" class="cancel-button">Abbrechen</button>
@@ -287,7 +299,14 @@
                 </label>
               </div>
             </div>
-            
+            <div class="form-group">
+              <label for="einnahme-startdatum">Startdatum:</label>
+              <input id="einnahme-startdatum" type="date" v-model="neueEinnahme.startdatum" required />
+            </div>
+            <div class="form-group">
+              <label for="einnahme-enddatum">Enddatum (optional)</label>
+              <input id="einnahme-enddatum" type="date" v-model="neueEinnahme.enddatum" />
+            </div>
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
               <button type="button" @click="showNeueEinnahmeForm = false" class="cancel-button">Abbrechen</button>
@@ -305,6 +324,8 @@
               <th>Betrag</th>
               <th>Kategorie</th>
               <th>Monate</th>
+              <th>Start</th>
+              <th>Ende</th>
               <th>Aktionen</th>
             </tr>
           </thead>
@@ -320,6 +341,8 @@
                   </span>
                 </div>
               </td>
+              <td>{{ einnahme.startdatum ? einnahme.startdatum.slice(0,10) : "—" }}</td>
+              <td>{{ einnahme.enddatum ? einnahme.enddatum.slice(0,10) : "—" }}</td>
               <td>
                 <button @click="editEinnahme(einnahme)" class="edit-button">Bearbeiten</button>
                 <button @click="deleteEinnahme(einnahme.id)" class="delete-button">Löschen</button>
@@ -366,7 +389,17 @@
                 </label>
               </div>
             </div>
-            
+            <div class="form-group">
+              <label for="edit-einnahme-startdatum">Startdatum:</label>
+              <input id="edit-einnahme-startdatum" type="date" v-model="editedEinnahme.startdatum" required />
+            </div>
+            <div class="form-group">
+              <label for="edit-einnahme-enddatum">Enddatum (optional)</label>
+              <input id="edit-einnahme-enddatum" type="date" v-model="editedEinnahme.enddatum" />
+              <small class="text-muted">
+               Wenn kein Enddatum gesetzt ist, bleibt die Einnahme unbegrenzt aktiv.
+              </small>
+            </div>
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
               <button type="button" @click="showEditEinnahmeForm = false" class="cancel-button">Abbrechen</button>
@@ -415,20 +448,25 @@ export default {
         kategorie: "",
         zahlungsintervall: "",
         zahlungsmonate: [],
-        startdatum: ""
+        startdatum: "",
+		enddatum: null
       },
       neueEinnahme: {
         name: "",
         betrag: null,
 		kategorie: "",
-        zahlungsmonate: []
+        zahlungsmonate: [],
+		startdatum: new Date().toISOString().split('T')[0],
+        enddatum: null
       },
       editedEinnahme: {
         id: null,
         name: "",
         betrag: null,
 		kategorie: "",
-        zahlungsmonate: []
+        zahlungsmonate: [],
+		startdatum: "",
+       enddatum: null
       },
       kategorienReihenfolge: [
        "Versicherungen",
@@ -671,6 +709,11 @@ export default {
     if (typeof this.editedAusgabe.startdatum === 'string' && this.editedAusgabe.startdatum.includes('T')) {
       this.editedAusgabe.startdatum = this.editedAusgabe.startdatum.split('T')[0];
     }
+	
+	if (typeof this.editedAusgabe.enddatum === 'string' && this.editedAusgabe.enddatum.includes('T')) {
+      this.editedAusgabe.enddatum = this.editedAusgabe.enddatum.split('T')[0];
+    }
+
 
     // Falls jährlich → Dropdown vorbelegen
     if (this.editedAusgabe.zahlungsintervall === 'jährlich') {
@@ -718,6 +761,8 @@ export default {
 
         await this.fetchFesteAusgaben();
         this.showEditAusgabeForm = false;
+		console.log("📝 Sende Update:", this.editedAusgabe);
+
       } catch (error) {
         console.error("Fehler beim Aktualisieren der Ausgabe:", error);
         alert("Fehler beim Aktualisieren: " + (error.response?.data?.detail || error.message));
@@ -743,6 +788,12 @@ export default {
     // Formular-Aktionen für Einnahmen
     async addFesteEinnahme() {
       try {
+// Validierung: Enddatum darf nicht vor Startdatum liegen
+        if (this.neueEinnahme.enddatum && this.neueEinnahme.startdatum &&
+           new Date(this.neueEinnahme.enddatum) < new Date(this.neueEinnahme.startdatum)) {
+          alert("Enddatum darf nicht vor dem Startdatum liegen.");
+          return;
+        }
         const response = await axios.post(
           // "http://192.168.178.138:8000/feste_einnahmen/", 
           `${apiUrlEinnahme}/`,
@@ -762,7 +813,9 @@ export default {
           name: "",
           betrag: null,
           kategorie: "",
-          zahlungsmonate: []
+          zahlungsmonate: [],
+          startdatum: new Date().toISOString().split('T')[0],
+          enddatum: null
         };
         
         // Modal schließen
@@ -776,12 +829,23 @@ export default {
     editEinnahme(einnahme) {
       // Tiefe Kopie der Einnahme erstellen
       this.editedEinnahme = JSON.parse(JSON.stringify(einnahme));
+      // Datums-Felder für <input type="date"> normalisieren (yyyy-mm-dd)
+      if (typeof this.editedEinnahme.startdatum === 'string' && this.editedEinnahme.startdatum.includes('T')) {
+        this.editedEinnahme.startdatum = this.editedEinnahme.startdatum.split('T')[0];
+      }
+      if (typeof this.editedEinnahme.enddatum === 'string' && this.editedEinnahme.enddatum?.includes('T')) {
+        this.editedEinnahme.enddatum = this.editedEinnahme.enddatum.split('T')[0];
+      }
       this.showEditEinnahmeForm = true;
     },
     
     async updateFesteEinnahme() {
       try {
-       
+        if (this.editedEinnahme.enddatum && this.editedEinnahme.startdatum &&
+           new Date(this.editedEinnahme.enddatum) < new Date(this.editedEinnahme.startdatum)) {
+          alert("Enddatum darf nicht vor dem Startdatum liegen.");
+          return;
+        }
         await axios.put(
            // `http://192.168.178.138:8000/feste_einnahmen/${this.editedEinnahme.id}`, 
            `${apiUrlEinnahme}/${this.editedEinnahme.id}`,

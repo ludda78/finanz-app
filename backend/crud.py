@@ -145,7 +145,7 @@ def get_monatliches_mittel_feste_ausgaben_ohne_andrea(db, jahr: int) -> float:
             return 0.0
 
         mittelwert = gesamt / monate_mit_daten
-        print(f"🔹 Berechneter Monatsdurchschnitt (ohne Andrea) für {jahr}: {mittelwert:.2f} €")
+        # print(f"🔹 Berechneter Monatsdurchschnitt (ohne Andrea) für {jahr}: {mittelwert:.2f} €")
         return mittelwert
 
     except Exception as e:
@@ -153,8 +153,62 @@ def get_monatliches_mittel_feste_ausgaben_ohne_andrea(db, jahr: int) -> float:
         return 0.0
 
 
+def update_feste_ausgabe(conn, ausgabe_id: int, daten: dict):
+    """
+    Aktualisiert eine feste Ausgabe (inkl. Enddatum)
+    Erwartet ein dict mit den Schlüsseln:
+    beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE feste_ausgaben
+        SET beschreibung = %s,
+            betrag = %s,
+            kategorie = %s,
+            zahlungsintervall = %s,
+            zahlungsmonate = %s,
+            startdatum = %s,
+            enddatum = %s
+        WHERE id = %s
+        RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum;
+    """, (
+        daten["beschreibung"],
+        daten["betrag"],
+        daten["kategorie"],
+        daten.get("zahlungsintervall"),
+        daten.get("zahlungsmonate"),
+        daten["startdatum"],
+        daten.get("enddatum"),  # ✅ optional
+        ausgabe_id
+    ))
+    result = cur.fetchone()
+    conn.commit()
+    return dict(result._mapping) if result else None
 
 
+def insert_feste_ausgabe(conn, daten: dict):
+    """
+    Fügt eine neue feste Ausgabe hinzu (inkl. optionalem Enddatum)
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO feste_ausgaben (
+            beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum, erstellt_am
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum, erstellt_am;
+    """, (
+        daten["beschreibung"],
+        daten["betrag"],
+        daten["kategorie"],
+        daten.get("zahlungsintervall"),
+        daten.get("zahlungsmonate"),
+        daten["startdatum"],
+        daten.get("enddatum"),  # ✅ neu
+        date.today()
+    ))
+    result = cur.fetchone()
+    conn.commit()
+    return dict(result._mapping)
 
 
 def get_feste_ausgaben_monat_jahresuebersicht(db, jahr, monat):
@@ -188,17 +242,17 @@ def verify_jahresuebersicht_calculation(conn, jahr):
     Überprüfe die Berechnung - sollte mit deiner Jahresübersicht übereinstimmen
     """
     monatliches_mittel = get_monatliches_mittel_feste_ausgaben_ohne_andrea(conn, jahr)
-    print(f"Monatliches Mittel feste Ausgaben (ohne Andrea): {monatliches_mittel:.2f} €")
+   # print(f"Monatliches Mittel feste Ausgaben (ohne Andrea): {monatliches_mittel:.2f} €")
     
-    print(f"\n{'Monat':<6} {'Ausgaben':<10} {'Delta':<10} {'Kumulativ':<10}")
-    print("-" * 40)
+   # print(f"\n{'Monat':<6} {'Ausgaben':<10} {'Delta':<10} {'Kumulativ':<10}")
+  #  print("-" * 40)
     
     kumulativ = 0
     for monat in range(1, 13):
         feste_ausgaben = get_feste_ausgaben_monat_jahresuebersicht(conn, jahr, monat)
         delta = monatliches_mittel - feste_ausgaben
         kumulativ += delta
-        print(f"{monat:<6} {feste_ausgaben:<10.2f} {delta:<10.2f} {kumulativ:<10.2f}")
+      #  print(f"{monat:<6} {feste_ausgaben:<10.2f} {delta:<10.2f} {kumulativ:<10.2f}")
     
     return kumulativ
 
@@ -406,6 +460,8 @@ def get_feste_einnahmen_monat_jahresuebersicht(db, jahr, monat):
         FROM feste_einnahmen fe
         WHERE :monat = ANY(fe.zahlungsmonate)
           AND (fe.kategorie IS NULL OR LOWER(fe.kategorie) NOT LIKE '%andrea%')
+          AND (fe.startdatum IS NULL OR fe.startdatum <= :datum)
+          AND (fe.enddatum   IS NULL OR fe.enddatum   >= :datum)
     """)
     result = db.execute(query, {"datum": monatsdatum, "monat": monat}).scalar()
     return float(result or 0)

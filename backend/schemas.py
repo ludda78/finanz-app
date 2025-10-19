@@ -109,3 +109,11 @@ class EinnahmeAenderung(EinnahmeAenderungBase):
     class Config:
         orm_mode = True
 
+class FesteAusgabeUpdate(BaseModel):
+    beschreibung: str
+    betrag: float
+    kategorie: str
+    zahlungsintervall: Optional[str] = None
+    zahlungsmonate: Optional[List[int]] = None
+    startdatum: date
+    enddatum: Optional[date] = None  # ✅ wichtig
