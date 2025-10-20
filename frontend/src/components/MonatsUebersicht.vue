@@ -158,6 +158,53 @@
         </tbody>
       </table>
     </div>
+	
+	<!-- Kontostand-Abschnitt (nach der Gesamtbilanz einfügen) -->
+<div class="kontostand-section">
+   <div style="display: flex; justify-content: space-between; align-items: center;">
+    <h2>Kontostand</h2>
+    <button @click="berechneSollKontostand" class="btn-recalculate">
+      Soll-Kontostand neu berechnen
+    </button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Beschreibung</th>
+        <th>Soll-Kontostand</th>
+        <th>Ist-Kontostand</th>
+        <th>Abweichung</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
+        <td><strong>{{ Number(sollKontostand).toFixed(2) }} €</strong></td>
+        <td>
+          <input 
+            type="number" 
+            step="0.01"
+            v-model.number="istKontostand"
+            @blur="speichereIstKontostand"
+            placeholder="Kontostand eingeben"
+          />
+        </td>
+        <td :style="{ color: kontostandAbweichung < 0 ? 'red' : 'green' }">
+          <strong>{{ kontostandAbweichung }} €</strong>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <!-- Zusätzliche Informationen -->
+  <div class="kontostand-info" v-if="istKontostand !== null">
+    <p><strong>Monatssaldo (Soll):</strong> {{ monatssaldoSoll }} €</p>
+    <p><strong>Virtueller Kontostand Vormonat:</strong> {{ sollKontostandVormonat }} €</p>
+    <p v-if="kontostandAbweichung !== 0" :style="{ color: kontostandAbweichung < 0 ? 'red' : 'green' }">
+      <strong>{{ kontostandAbweichung > 0 ? 'Plus' : 'Minus' }} von {{ Math.abs(kontostandAbweichung) }} € gegenüber Soll-Kontostand</strong>
+    </p>
+  </div>
+</div>
     
     <!-- Ungeplante Transaktionen -->
     <div class="ungeplante-transaktionen">
@@ -275,6 +322,9 @@ export default {
       festeEinnahmen: [],
       ungeplannteAusgaben: [],
       ungeplannteEinnahmen: [],
+      sollKontostand: 0, // Wird vom Backend geladen
+      istKontostand: null,
+      sollKontostandVormonat: 0, // Wird bereits verwendet
       newAusgabe: {
         beschreibung: '',
         betrag: null,
@@ -282,7 +332,7 @@ export default {
         typ: 'ausgabe',
         monat: null,
         jahr: null,
-		status: 'nicht_ausgeglichen' // Standardwert: nicht ausgeglichen
+		status: 'nicht_ausgeglichen', // Standardwert: nicht ausgeglichen
       },
       newEinnahme: {
         beschreibung: '',
@@ -397,7 +447,17 @@ export default {
     },
     gesamtbilanzAbweichung() {
       return (parseFloat(this.gesamtbilanzIst) - parseFloat(this.gesamtbilanzSoll)).toFixed(2);
-    }
+    },
+	monatssaldoSoll() {
+      return (parseFloat(this.summeFesteEinnahmenSoll) - parseFloat(this.summeFesteAusgabenSoll)).toFixed(2);
+    },
+
+    kontostandAbweichung() {
+      if (this.istKontostand === null || this.istKontostand === '') return 0;
+      const ist = parseFloat(this.istKontostand) || 0;
+      const soll = parseFloat(this.sollKontostand) || 0;
+      return (ist - soll).toFixed(2);
+    },
   },
   created() {
     // Generate a range of years (e.g., last 5 years to next 5 years)
@@ -446,19 +506,37 @@ export default {
       this.updateRoute();
     },
     
-    // Your existing methods
+/*      async ladeMonatsUebersicht() {
+       try {
+         const response = await axios.get(`${monatsuebersichtUrl}/${this.monat}/${this.jahr}`);
+      
+         console.log("API Response:", response.data);
+      
+         this.festeAusgaben = response.data.feste_ausgaben.map(ausgabe => ({ ...ausgabe, ist_wert: 0 }));
+         this.festeEinnahmen = response.data.feste_einnahmen.map(einnahme => ({ ...einnahme, ist_wert: 0 }));
+      
+         await this.ladeIstWerte();
+         await this.ladeUngeplannteTransaktionen();
+         await this.ladeKontostandDaten(); // Diese Zeile ist wichtig!
+      
+       } catch (error) {
+         console.error("Fehler beim Laden der Daten:", error);
+       }
+     }, */
+	// 4. Angepasste ladeMonatsUebersicht Methode
     async ladeMonatsUebersicht() {
       try {
-		const response = await axios.get(`${monatsuebersichtUrl}/${this.monat}/${this.jahr}`);
-
+        const response = await axios.get(`${monatsuebersichtUrl}/${this.monat}/${this.jahr}`);
+      
         console.log("API Response:", response.data);
-        
+      
         this.festeAusgaben = response.data.feste_ausgaben.map(ausgabe => ({ ...ausgabe, ist_wert: 0 }));
         this.festeEinnahmen = response.data.feste_einnahmen.map(einnahme => ({ ...einnahme, ist_wert: 0 }));
-        
+      
         await this.ladeIstWerte();
         await this.ladeUngeplannteTransaktionen();
-        
+        await this.ladeKontostandDaten(); // WICHTIG: Diese Reihenfolge beibehalten
+      
       } catch (error) {
         console.error("Fehler beim Laden der Daten:", error);
       }
@@ -715,7 +793,79 @@ export default {
 				default:
 			return 'inherit';
 		}
-	}
+	},
+	
+    async ladeKontostandDaten() {
+      try {
+        // SOLL-Kontostand für aktuellen Monat laden
+        const { data: sollData } = await axios.get(
+          `${apiBaseUrl}/soll-kontostaende/${this.jahr}/${this.monat}`
+        );
+        this.sollKontostand = sollData?.kontostand_soll ?? 0;
+
+        // IST-Kontostand für aktuellen Monat laden
+        const { data: istData } = await axios.get(
+          `${apiBaseUrl}/kontostand-ist/${this.jahr}/${this.monat}`
+        );
+        this.istKontostand = istData?.ist_kontostand ?? null;
+
+        console.log("Kontostand-Daten geladen:", {
+          soll: this.sollKontostand,
+          ist: this.istKontostand,
+        });
+
+      } catch (error) {
+        if (error.response && error.response.status === 404) {
+          // Fallback: neu berechnen, wenn keine Daten da
+          await this.berechneSollKontostand();
+          return;
+         }
+        console.error("❌ Fehler beim Laden der Kontostand-Daten:", error);
+        this.sollKontostand = 0;
+        this.istKontostand = null;
+      }
+    },
+
+
+    async berechneSollKontostand() {
+    try {
+      // Berechnung für das ganze Jahr anstoßen
+      await axios.post(`${apiBaseUrl}/soll-kontostaende/berechnen/${this.jahr}`);
+
+      // Den gerade berechneten Monat erneut holen
+      const { data } = await axios.get(`${apiBaseUrl}/soll-kontostaende/${this.jahr}/${this.monat}`);
+      this.sollKontostand = data?.kontostand_soll ?? 0;
+
+      console.log("✅ Soll-Kontostand neu berechnet:", this.sollKontostand);
+    } catch (error) {
+      console.error("❌ Fehler beim Berechnen des Soll-Kontostands:", error);
+
+      // Fallback: lokale Näherung (wenn du das möchtest)
+      const vormonat = parseFloat(this.sollKontostandVormonat) || 0;
+      const saldo = parseFloat(this.monatssaldoSoll) || 0;
+      this.sollKontostand = Number(vormonat + saldo).toFixed(2);
+    }
+  },
+
+
+  async speichereIstKontostand() {
+    if (this.istKontostand === null || this.istKontostand === '') return;
+    
+    try {
+      const response = await axios.post(`${apiBaseUrl}/kontostand-ist`, {
+        monat: this.monat,
+        jahr: this.jahr,
+        ist_kontostand: parseFloat(this.istKontostand),
+        soll_kontostand: parseFloat(this.sollKontostand),
+        abweichung: parseFloat(this.kontostandAbweichung)
+      });
+      
+      console.log("Ist-Kontostand gespeichert:", response.data);
+    } catch (error) {
+      console.error("Fehler beim Speichern des Ist-Kontostands:", error);
+    }
+  },
+
   },
   watch: {
     // Watch for route changes to reload data
@@ -726,7 +876,7 @@ export default {
         this.ladeMonatsUebersicht();
       }
     }
-  }
+  },
 };
 
 </script>
@@ -885,4 +1035,78 @@ input[type="number"] {
   width: 100px;
   text-align: right;
 }
+
+.kontostand-section {
+  margin-top: 30px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #007bff;
+}
+
+.kontostand-section h2 {
+  color: #007bff;
+  margin-bottom: 15px;
+}
+
+.kontostand-section table {
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.kontostand-section input[type="number"] {
+  width: 120px;
+  padding: 8px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  text-align: right;
+  font-weight: bold;
+}
+
+.kontostand-section input[type="number"]:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 5px rgba(0,123,255,0.3);
+}
+
+.kontostand-info {
+  margin-top: 15px;
+  padding: 15px;
+  background-color: white;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.kontostand-info p {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.kontostand-info p:last-child {
+  margin-bottom: 0;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* Responsive Design für kleinere Bildschirme */
+@media (max-width: 768px) {
+  .kontostand-section {
+    padding: 15px;
+    margin: 20px 0;
+  }
+}
+  
+  .kontostand-section input[type="number"] {
+    width: 100px;
+    font-size: 14px;
+  }
+  
+  .kontostand-info {
+    padding: 10px;
+  }
+  
+  .kontostand-info p {
+    font-size: 13px;
+  }
 </style>

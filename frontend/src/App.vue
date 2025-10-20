@@ -6,6 +6,7 @@
       <router-link to="/monatsuebersicht">Monatsübersicht</router-link>
       <router-link to="/konfiguration">Feste Posten</router-link>
       <router-link :to="{name: 'Jahresuebersicht'}" class="nav-button">Jahresübersicht</router-link>
+      <router-link to="/info">Info</router-link>
     </div>
     
     <!-- Router View für den Inhalt -->
