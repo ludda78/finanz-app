@@ -56,42 +56,78 @@
               <tr v-for="posten in kategorieItems" :key="posten.id">
                 <td>{{ posten.beschreibung }}</td>
                 <td v-for="monat in 12" :key="'posten-'+posten.id+'-'+monat">
+                 <!-- {{ isAusgabeAktiv(posten, monat, aktuellesJahr) ? getPostenBetragFuerMonat(posten.id, monat) : '-' }} -->
                   {{ getPostenBetragFuerMonat(posten.id, monat) }}
-                </td>
+				</td>
                 <td>{{ formatCurrency(getPostenDurchschnitt(posten.id)) }}</td>
               </tr>
             </template>
           </tbody>
           <tfoot>
-            <!-- Summen pro Monat (ohne Anteile Andrea) -->
-            <tr class="summe-zeile">
-              <td><strong>Summe Ausgaben</strong></td>
-              <td v-for="monat in 12" :key="'summe-'+monat">
-                {{ getMonatsSummeOhneAndrea(monat, 'ausgaben') }}
-              </td>
-              <td><strong>{{ formatCurrency(monatlicheAusgabenOhneAndrea) }}</strong></td>
-            </tr>
-            
-            <!-- Virtuelle Kontostände (ohne Anteile Andrea) -->
-            <tr>
-              <td><strong>Virtueller Kontostand</strong></td>
-              <td v-for="monat in 12" :key="'kontostand-'+monat" 
-                  :class="getVirtuellerKontostandOhneAndrea(monat) >= 0 ? 'positive' : 'negative'">
-                {{ formatCurrency(getVirtuellerKontostandOhneAndrea(monat)) }}
-              </td>
-              <td></td>
-            </tr>
-            
-            <!-- Delta zum Mittel (ohne Anteile Andrea) -->
-            <tr>
-              <td><strong>Delta zum Mittel</strong></td>
-              <td v-for="monat in 12" :key="'delta-'+monat" 
-                  :class="getDeltaZumMittelOhneAndrea(monat) >= 0 ? 'positive' : 'negative'">
-                {{ formatCurrency(getDeltaZumMittelOhneAndrea(monat)) }}
-              </td>
-              <td></td>
-            </tr>
-          </tfoot>
+  <!-- Summen pro Monat (ohne Anteile Andrea) -->
+  <tr class="summe-zeile ausgaben">
+    <td><strong>Summe Ausgaben</strong></td>
+    <td v-for="monat in 12" :key="'summe-ausgaben-'+monat">
+      {{ getMonatsSummeOhneAndrea(monat, 'ausgaben') }}
+    </td>
+    <td><strong>{{ formatCurrency(monatlicheAusgabenOhneAndrea) }}</strong></td>
+  </tr>
+  
+  <!-- Neue Zeile für Einnahmen -->
+  <tr class="summe-zeile einnahmen">
+    <td><strong>Summe Einnahmen</strong></td>
+    <td v-for="monat in 12" :key="'summe-einnahmen-'+monat">
+      {{ getMonatsSummeOhneAndrea(monat, 'einnahmen') }}
+    </td>
+    <td><strong>{{ formatCurrency(monatlicheEinnahmenOhneAndrea) }}</strong></td>
+  </tr>
+  
+  <!-- Neue Zeile für monatlichen Saldo -->
+  <tr class="summe-zeile saldo">
+    <td><strong>Monatssaldo (Ein - Aus)</strong></td>
+    <td v-for="monat in 12" :key="'saldo-'+monat" 
+        :class="getMonatsSaldoOhneAndrea(monat) >= 0 ? 'positive' : 'negative'">
+      {{ formatCurrency(getMonatsSaldoOhneAndrea(monat)) }}
+    </td>
+    <td :class="saldoProMonat >= 0 ? 'positive' : 'negative'">
+      <strong>{{ formatCurrency(saldoProMonat) }}</strong>
+    </td>
+  </tr>
+  
+  <!-- Virtueller Kontostand (kumulativ) -->
+  <tr class="virtual-balance">
+    <td><strong>Virtueller Kontostand (kumulativ)</strong></td>
+    <td v-for="monat in 12" :key="'kontostand-'+monat" 
+        :class="getVirtuellerKontostandOhneAndrea(monat) >= 0 ? 'positive' : 'negative'">
+      {{ formatCurrency(getVirtuellerKontostandOhneAndrea(monat)) }}
+    </td>
+    <td></td>
+  </tr>
+  
+  <!-- Delta zum Ausgaben-Mittel (monatlich) -->
+  <tr class="delta-mittel">
+    <td><strong>Delta zum Ausgaben-Mittel</strong></td>
+    <td v-for="monat in 12" :key="'delta-'+monat" 
+        :class="getDeltaZumMittelOhneAndrea(monat) <= 0 ? 'positive' : 'negative'"
+        class="tooltip" 
+        :data-tooltip="getDeltaZumMittelOhneAndrea(monat) <= 0 ? 'Weniger ausgegeben' : 'Mehr ausgegeben'">
+      {{ formatCurrency(getDeltaZumMittelOhneAndrea(monat)) }}
+    </td>
+    <td></td>
+  </tr>
+  
+  <!-- Kontostand Monatsende Soll (früher Kumulativ Delta Ausgaben-Mittel) -->
+  <tr class="kontostand-soll">
+    <td><strong>Kontostand Monatsende Soll</strong></td>
+    <td v-for="monat in 12" :key="'kontostand-soll-'+monat" 
+        :class="getKontostandMonatsendeSoll(monat) >= 0 ? 'positive' : 'negative'"
+        class="tooltip" 
+        :data-tooltip="'Soll-Kontostand basierend auf Ausgaben-Durchschnitt'">
+      {{ formatCurrency(getKontostandMonatsendeSoll(monat)) }}
+    </td>
+    <td></td>
+  </tr>
+</tfoot>
         </table>
       </div>
       
@@ -217,7 +253,7 @@
 
 <script>
 import axios from 'axios';
-
+//import { isAusgabeAktiv } from '@/utils/finanzHelpers';
 const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
 const jahresUebersichtUrl = `${apiBaseUrl}/jahresuebersicht`;
 const KATEGORIE_AUSGABEN_ANDREA = 'Anteile Andrea'; // Für Ausgaben
@@ -384,6 +420,7 @@ export default {
     }
   },
   methods: {
+  
     async loadJahresUebersicht() {
       this.loading = true;
       try {
@@ -589,31 +626,39 @@ export default {
     // Aktualisierte Methode für virtuellen Kontostand ohne Andrea
     getVirtuellerKontostandOhneAndrea(monat) {
       if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
+  
+      let kumulativerSaldo = 0;
+  
+      // Berechne kumulativen Saldo bis zu diesem Monat
+      for (let m = 1; m <= monat; m++) {
+        const monatsDaten = this.jahresUebersicht.monats_daten.find(md => md.monat === m);
+        if (monatsDaten) {
+          // Ausgaben ohne Andrea für diesen Monat
+          const ausgabenOhneAndrea = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
+            if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
+              return sum + ausgabe.betrag;
+            }
+            return sum;
+          }, 0);
       
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return 0;
-      
-      // Summe der Anteile Andrea für diesen Monat (nur Ausgaben)
-      const andreaSummeAusgaben = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-        if (ausgabe.kategorie === KATEGORIE_AUSGABEN_ANDREA) {
-          return sum + ausgabe.betrag;
-        }
-        return sum;
-      }, 0);
-      
-      // Summe der Andrea-Einnahmen für diesen Monat
-      let andreaSummeEinnahmen = 0;
-      if (monatsDaten.einnahmen) {
-        andreaSummeEinnahmen = monatsDaten.einnahmen.reduce((sum, einnahme) => {
-          if (einnahme.kategorie === KATEGORIE_EINNAHMEN_ANDREA) {
-            return sum + einnahme.betrag;
+          // Einnahmen ohne Andrea für diesen Monat
+          let einnahmenOhneAndrea = 0;
+          if (monatsDaten.einnahmen) {
+            einnahmenOhneAndrea = monatsDaten.einnahmen.reduce((sum, einnahme) => {
+              if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
+                return sum + einnahme.betrag;
+              }
+              return sum;
+            }, 0);
           }
-          return sum;
-        }, 0);
-      }
       
-      // Virtuellen Kontostand ohne Andreas Anteile berechnen
-      return monatsDaten.virtueller_kontostand + andreaSummeAusgaben - andreaSummeEinnahmen;
+          // Saldo für diesen Monat = Einnahmen - Ausgaben
+          const monatsSaldo = einnahmenOhneAndrea - ausgabenOhneAndrea;
+          kumulativerSaldo += monatsSaldo;
+        }
+      }
+  
+      return kumulativerSaldo;
     },
     // Aktualisierte Methode für Delta zum Mittel ohne Andrea
     getDeltaZumMittelOhneAndrea(monat) {
@@ -623,26 +668,18 @@ export default {
       if (!monatsDaten) return 0;
       
       // Ausgaben Andrea in diesem Monat
-      const andreaAusgaben = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-        if (ausgabe.kategorie === KATEGORIE_AUSGABEN_ANDREA) {
+      const ausgabenOhneAndrea = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
+        if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
           return sum + ausgabe.betrag;
         }
         return sum;
       }, 0);
       
-      // Einnahmen Andrea in diesem Monat
-      let andreaEinnahmen = 0;
-      if (monatsDaten.einnahmen) {
-        andreaEinnahmen = monatsDaten.einnahmen.reduce((sum, einnahme) => {
-          if (einnahme.kategorie === KATEGORIE_EINNAHMEN_ANDREA) {
-            return sum + einnahme.betrag;
-          }
-          return sum;
-        }, 0);
-      }
       
-      // Delta zum Mittel ohne Andreas Anteile
-      return monatsDaten.delta_zum_mittel + (andreaAusgaben - andreaEinnahmen);
+      // Delta = tatsächliche Ausgaben - durchschnittliche Ausgaben
+      // Negativ = weniger ausgegeben als im Schnitt (gut)
+      // Positiv = mehr ausgegeben als im Schnitt (schlecht)
+      return ausgabenOhneAndrea - this.monatlicheAusgabenOhneAndrea;
     },
  
     // Ähnliche Aktualisierungen sind in allen anderen Methoden nötig, 
@@ -727,7 +764,113 @@ export default {
 	// Berechnet das monatliche Mittel für ein Halbjahr (ohne Anteile Andrea)
     getHalbjahrMittelOhneAndrea(halbjahr, typ) {
       return this.getHalbjahrSummeOhneAndrea(halbjahr, typ) / 6; // Durch 6 Monate teilen
+    },
+	
+    // Berechnet den Saldo für einen bestimmten Monat (ohne Andrea)
+    getMonatsSaldoOhneAndrea(monat) {
+      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
+  
+      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
+      if (!monatsDaten) return 0;
+  
+      // Ausgaben ohne Andrea für diesen Monat
+      const ausgabenOhneAndrea = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
+        if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
+          return sum + ausgabe.betrag;
+        }
+        return sum;
+      }, 0);
+  
+      // Einnahmen ohne Andrea für diesen Monat
+      let einnahmenOhneAndrea = 0;
+      if (monatsDaten.einnahmen) {
+        einnahmenOhneAndrea = monatsDaten.einnahmen.reduce((sum, einnahme) => {
+          if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
+            return sum + einnahme.betrag;
+           }
+          return sum;
+        }, 0);
+      }
+  
+      // Saldo = Einnahmen - Ausgaben
+      return einnahmenOhneAndrea - ausgabenOhneAndrea;
+    },
+
+    // Hilfsmethode um zu verstehen, was der virtuelle Kontostand bedeutet
+    erklaeVirtuellenKontostand(monat) {
+      const explanation = {
+        monat: monat,
+        monatName: this.getMonatName(monat),
+        bisheriger_saldo: this.getVirtuellerKontostandOhneAndrea(monat),
+        interpretation: ''
+      };
+  
+      if (explanation.bisheriger_saldo > 0) {
+        explanation.interpretation = `Sie sind ${this.formatCurrency(Math.abs(explanation.bisheriger_saldo))} besser als geplant.`;
+      } else if (explanation.bisheriger_saldo < 0) {
+        explanation.interpretation = `Sie sind ${this.formatCurrency(Math.abs(explanation.bisheriger_saldo))} schlechter als geplant.`;
+      } else {
+        explanation.interpretation = 'Sie liegen genau im Plan.';
+      }
+  
+     return explanation;
+    },
+	// Neue Methode: Kumulatives Delta zum Ausgaben-Mittel
+	getKontostandMonatsendeSoll(monat) {
+      let kumulativesDelta = 0;
+
+      for (let m = 1; m <= monat; m++) {
+        // Vorzeichen umkehren: Subtrahend und Minuend vertauschen
+        kumulativesDelta += (this.monatlicheAusgabenOhneAndrea - this.getTatsaechlicheAusgabenOhneAndrea(m));
+      }
+
+      return kumulativesDelta;
+    },
+
+	// Zusätzliche Methode für eine alternative Berechnung des virtuellen Kontostands
+	// Diese Methode zeigt, wie viel Sie vom Jahresmittel abweichen (kumulativ)
+	getVirtuellerKontostandAlternativ(monat) {
+      let kumulativesDelta = 0;
+  
+      for (let m = 1; m <= monat; m++) {
+        kumulativesDelta += this.getDeltaZumMittelOhneAndrea(m);
+      }
+  
+      return kumulativesDelta;
+    },
+	getTatsaechlicheAusgabenOhneAndrea(monat) {
+      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
+  
+      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
+      if (!monatsDaten) return 0;
+  
+      return monatsDaten.ausgaben.reduce((sum, ausgabe) => {
+        if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
+          return sum + ausgabe.betrag;
+        }
+        return sum;
+      }, 0);
+    },
+
+	// Methode um den aktuellen Kontostand zu vergleichen (für Ihre neue Funktion)
+	// Diese würden Sie in der Monatsübersicht verwenden
+	vergleicheKontostand(aktuellerKontostand, monat) {
+      const virtuellerKontostand = this.getVirtuellerKontostandOhneAndrea(monat);
+      const differenz = aktuellerKontostand - virtuellerKontostand;
+  
+      return {
+        virtuell: virtuellerKontostand,
+        aktuell: aktuellerKontostand,
+        differenz: differenz,
+        status: differenz >= 0 ? 'plus' : 'minus',
+        statusText: differenz >= 0 ? 'Im Plus' : 'Im Minus'
+      };
     }
+
+	//isAusgabeAktiv(posten, monat, jahr) {
+      // Hier rufst du die importierte Funktion auf
+     // return true; //isAusgabeAktiv(posten, monat, jahr);
+	// }
   }
 };
 </script>
@@ -836,5 +979,71 @@ export default {
 .periode-tabelle th:first-child,
 .periode-tabelle td:first-child {
   text-align: center;
+}
+
+/* Zusätzliche CSS-Styles für JahresUebersicht.vue */
+
+.summe-zeile.ausgaben {
+  background-color: #ffe6e6;
+}
+
+.summe-zeile.einnahmen {
+  background-color: #e6ffe6;
+}
+
+.summe-zeile.saldo {
+  background-color: #e6f3ff;
+  font-weight: bold;
+}
+
+.virtual-balance {
+  background-color: #fff2e6;
+  font-weight: bold;
+}
+
+.delta-mittel {
+  background-color: #f0f0f0;
+}
+
+.kumulativ-delta {
+  background-color: #e8f4f8;
+  font-weight: bold;
+}
+
+.positive {
+  color: #28a745;
+  font-weight: bold;
+}
+
+.negative {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+/* Tooltips für bessere Erklärung */
+.tooltip {
+  position: relative;
+  cursor: help;
+}
+
+.tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.tooltip:hover::after {
+  opacity: 1;
 }
 </style>

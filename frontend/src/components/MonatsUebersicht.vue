@@ -30,40 +30,39 @@
     <div v-for="(ausgaben, kategorie) in gruppiertFesteAusgaben" :key="'ausgaben-'+kategorie">
       <h3>{{ kategorie }}</h3>
       <table>
-        <thead>
-          <tr>
-            <th>Beschreibung</th>
-            <th>Soll</th>
-            <th>Ist</th>
-            <th>Abweichung</th>
-          </tr>
-        </thead>
-        <tbody>	
-          <tr v-for="ausgabe in ausgaben" :key="ausgabe.id">
-            <td>{{ ausgabe.beschreibung }}</td>
-            <td>{{ ausgabe.betrag }} €</td>
-            <td>
-              <input 
-                type="number" 
-                v-model.number="ausgabe.ist_wert"
-                @blur="speichereIstWert(ausgabe.id, ausgabe.ist_wert, 'ausgabe', ausgabe.beschreibung, ausgabe.betrag)"
-              />
-            </td>
-            <td :style="{ color: ausgabe.ist_wert > ausgabe.betrag ? 'red' : 'green' }">
-              {{ ausgabe.ist_wert - ausgabe.betrag }} €
-            </td>
-          </tr>
-          <!-- Summenzeile für jede Kategorie -->
-          <tr class="summen-zeile">
-            <td><strong>Summe {{ kategorie }}</strong></td>
-            <td><strong>{{ berechneSummeSoll(ausgaben) }} €</strong></td>
-            <td><strong>{{ berechneSummeIst(ausgaben) }} €</strong></td>
-            <td :style="{ color: berechneSummeAbweichung(ausgaben) > 0 ? 'red' : 'green' }">
-              <strong>{{ berechneSummeAbweichung(ausgaben) }} €</strong>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+          <thead>
+			<tr>
+              <th>Beschreibung</th>
+				<th>Soll</th>
+				<th>Ist</th>
+				<th>Abweichung</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr v-for="ausgabe in ausgaben" :key="ausgabe.id">
+				<td>{{ ausgabe.beschreibung }}</td>
+				<td>{{ ausgabe.betrag }} €</td>
+				<td>
+				<input 
+					type="number" 
+					v-model.number="ausgabe.ist_wert"
+					@blur="speichereIstWert(ausgabe.id, ausgabe.ist_wert, 'ausgabe', ausgabe.beschreibung, ausgabe.betrag)"
+				/>
+				</td>
+				<td :style="{ color: ausgabe.ist_wert > ausgabe.betrag ? 'red' : 'green' }">
+				{{ ausgabe.ist_wert - ausgabe.betrag }} €
+				</td>
+			</tr>
+			<tr class="summen-zeile">
+				<td><strong>Summe</strong></td>
+				<td><strong>{{ summeSoll }} €</strong></td>
+				<td><strong>{{ summeIst }} €</strong></td>
+				<td :style="{ color: summeAbweichung > 0 ? 'red' : 'green' }">
+				<strong>{{ summeAbweichung }} €</strong>
+				</td>
+			</tr>
+			</tbody>
+		</table>
     </div>
     
     <!-- Gesamtsummenzeile für feste Ausgaben -->
@@ -176,7 +175,7 @@
             <button v-if="editAusgabeId" type="button" @click="cancelEdit('ausgabe')">Abbrechen</button>
           </form>
 
-          <table>
+          <table class="ausgaben-tabelle">
             <thead>
               <tr>
                 <th>Beschreibung</th>
@@ -224,7 +223,7 @@
             <button v-if="editEinnahmeId" type="button" @click="cancelEdit('einnahme')">Abbrechen</button>
           </form>
 
-          <table>
+          <table class="einnahmen-tabelle">
             <thead>
               <tr>
                 <th>Beschreibung</th>
@@ -257,6 +256,7 @@
 
 <script>
 import axios from "axios";
+//import { isAusgabeAktiv } from '@/utils/finanzHelpers';
 const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
 
 // API-Endpunkte für die verschiedenen Funktionen
@@ -410,6 +410,13 @@ export default {
     this.ladeMonatsUebersicht();
   },
   methods: {
+
+  /* getAktiveAusgabenFürMonat(monat, jahr) {
+    return this.festeAusgaben.filter(ausgabe => 
+      isAusgabeAktiv(ausgabe, monat, jahr)
+    );
+  }, */
+  
     // New methods for month/year navigation
     updateRoute() {
       this.$router.push({
@@ -562,35 +569,39 @@ export default {
         let response;
         if (this.editAusgabeId) {
           // Update bestehende Ausgabe
-          response = await axios.put(`${ungeplanteTrxUrl}/${this.editAusgabeId}`, this.newAusgabe);
-          
-          // Aktualisiere die lokale Liste
-          const index = this.ungeplannteAusgaben.findIndex(a => a.id === this.editAusgabeId);
-          if (index !== -1) {
-            this.ungeplannteAusgaben[index] = response.data;
-          }
-          
-          this.editAusgabeId = null;
-        } else {
-          // Neue Ausgabe hinzufügen
-          response = await axios.post(ungeplanteTrxUrl, this.newAusgabe);
-          this.ungeplannteAusgaben.push(response.data);
-        }
-        
-        // Formular zurücksetzen
-        this.newAusgabe = {
-          beschreibung: '',
-          betrag: null,
-          kommentar: '',
-          typ: 'ausgabe',
-          monat: this.monat,
-          jahr: this.jahr,
-          status: 'nicht_ausgeglichen'
-        };
-      } catch (error) {
-        console.error("Fehler beim Hinzufügen/Aktualisieren der Ausgabe:", error);
+          const updateData = {
+        ...this.newAusgabe,
+        id: this.editAusgabeId  // ID explizit setzen
+      };
+      response = await axios.put(`${ungeplanteTrxUrl}/${this.editAusgabeId}`, updateData);
+      
+      // Aktualisiere die lokale Liste komplett
+      const index = this.ungeplannteAusgaben.findIndex(a => a.id === this.editAusgabeId);
+      if (index !== -1) {
+        this.ungeplannteAusgaben[index] = { ...response.data };
       }
-    },
+      
+      this.editAusgabeId = null;
+    } else {
+      // Neue Ausgabe hinzufügen
+      response = await axios.post(ungeplanteTrxUrl, this.newAusgabe);
+      this.ungeplannteAusgaben.push(response.data);
+    }
+    
+    // Formular zurücksetzen
+    this.newAusgabe = {
+      beschreibung: '',
+      betrag: null,
+      kommentar: '',
+      typ: 'ausgabe',
+      monat: this.monat,
+      jahr: this.jahr,
+      status: 'nicht_ausgeglichen'
+    };
+  } catch (error) {
+    console.error("Fehler beim Hinzufügen/Aktualisieren der Ausgabe:", error);
+  }
+},
     
     async addEinnahme() {
       try {
@@ -668,23 +679,30 @@ export default {
 	
 	// Fügen Sie eine neue Methode hinzu, um den Status zu aktualisieren:
 	async updateAusgabeStatus(ausgabe, newStatus) {
-		try {
-			const response = await axios.put(`${ungeplanteTrxUrl}/${ausgabe.id}`, {
-			...ausgabe,
-			status: newStatus
-			});
-		
-			// Aktualisieren Sie den Status in der lokalen Liste
-			const index = this.ungeplannteAusgaben.findIndex(a => a.id === ausgabe.id);
-			if (index !== -1) {
-				this.ungeplannteAusgaben[index].status = newStatus;
-			}
-		
-			console.log("Status aktualisiert:", response.data);
-		} catch (error) {
-			console.error("Fehler beim Aktualisieren des Status:", error);
-		}
-	},
+    try {
+      const updateData = {
+        beschreibung: ausgabe.beschreibung,
+        betrag: ausgabe.betrag,
+        kommentar: ausgabe.kommentar || '',
+        typ: ausgabe.typ,
+        monat: ausgabe.monat,
+        jahr: ausgabe.jahr,
+        status: newStatus
+      };
+    
+      const response = await axios.put(`${ungeplanteTrxUrl}/${ausgabe.id}`, updateData);
+    
+      // Aktualisieren Sie den gesamten Eintrag in der lokalen Liste
+      const index = this.ungeplannteAusgaben.findIndex(a => a.id === ausgabe.id);
+      if (index !== -1) {
+        this.ungeplannteAusgaben[index] = { ...response.data };
+      }
+    
+      console.log("Status aktualisiert:", response.data);
+    } catch (error) {
+      console.error("Fehler beim Aktualisieren des Status:", error);
+    }
+  },
 
 // Fügen Sie eine Hilfsmethode hinzu, um die richtige Farbe basierend auf dem Status zu ermitteln:
 	getStatusColor(status) {
@@ -744,16 +762,6 @@ button {
 button:hover {
   background-color: #e0e0e0;
 }
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 20px;
-}
-th, td {
-  padding: 8px;
-  border: 1px solid #ddd;
-}
 .text-red-500 {
   color: red;
 }
@@ -777,5 +785,104 @@ th, td {
 }
 input[type="number"] {
   width: 100px;
+}
+/* Diese Zeile schon vorhanden, nicht ändern */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  table-layout: fixed; /* Neue Eigenschaft hinzufügen */
+}
+
+th, td {
+  padding: 8px;
+  border: 1px solid #ddd;
+  overflow: hidden;           /* Neu */
+  text-overflow: ellipsis;    /* Neu */
+  white-space: nowrap;        /* Neu */
+}
+
+/* Diese neuen Regeln hinzufügen */
+/* Definierte Spaltenbreiten für alle Tabellen */
+th:nth-child(1), td:nth-child(1) {
+  width: 40%; /* Beschreibung */
+}
+
+th:nth-child(2), td:nth-child(2) {
+  width: 15%; /* Soll */
+  text-align: right;
+}
+
+th:nth-child(3), td:nth-child(3) {
+  width: 20%; /* Ist (mehr Platz für Input) */
+  text-align: right;
+}
+
+th:nth-child(4), td:nth-child(4) {
+  width: 15%; /* Abweichung */
+  text-align: right;
+}
+
+/* Für ungeplante Transaktionen (haben andere Spaltenstruktur) */
+.ungeplante-transaktionen th:nth-child(1),
+.ungeplante-transaktionen td:nth-child(1) {
+  width: 40%; /* Beschreibung */
+}
+
+.ungeplante-transaktionen th:nth-child(2),
+.ungeplante-transaktionen td:nth-child(2) {
+  width: 15%; /* Betrag */
+  text-align: right;
+}
+
+.ungeplante-transaktionen th:nth-child(3),
+.ungeplante-transaktionen td:nth-child(3) {
+  width: 15%; /* Status/leer */
+}
+
+.ungeplante-transaktionen th:nth-child(4),
+.ungeplante-transaktionen td:nth-child(4) {
+  width: 35%; /* Aktionen */
+  white-space: normal; /* Zeilenumbruch erlauben */
+}
+
+.ungeplante-transaktionen td button {
+  margin: 2px;
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 70px;
+}
+
+/* Ausgaben (4 Spalten) */
+.ausgaben-tabelle th:nth-child(4),
+.ausgaben-tabelle td:nth-child(4) {
+  width: 30%;
+}
+
+/* Einnahmen (3 Spalten) */
+.einnahmen-tabelle th:nth-child(3),
+.einnahmen-tabelle td:nth-child(3) {
+  width: 30%;
+}
+
+@media (max-width: 768px) {
+  .ungeplante-transaktionen td button {
+    display: block;
+    width: 100%;
+    margin-bottom: 2px;
+  }
+}
+
+/* Gesamtsummentabellen konsistent */
+.gesamtsumme table {
+  margin-left: auto;
+  margin-right: 0;
+  width: 50%;
+}
+
+/* Einheitliches Aussehen für Inputs (falls nicht vorhanden) */
+input[type="number"] {
+  width: 100px;
+  text-align: right;
 }
 </style>

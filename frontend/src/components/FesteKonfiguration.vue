@@ -105,6 +105,11 @@
               <label for="startdatum">Startdatum:</label>
               <input id="startdatum" type="date" v-model="neueAusgabe.startdatum" required />
             </div>
+			<!-- Enddatum (optional) -->
+            <div class="form-group">
+              <label for="enddatum">Enddatum (optional)</label>
+              <input type="date" id="enddatum" v-model="neueAusgabe.enddatum" class="form-control">
+            </div>
             
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
@@ -375,7 +380,6 @@
 
 <script>
 import axios from "axios";
-
 const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
 const apiUrlAusgabe = `${apiBaseUrl}/feste-ausgaben`;
 const apiUrlEinnahme = `${apiBaseUrl}/feste_einnahmen`;
@@ -401,7 +405,8 @@ export default {
         kategorie: "Sonstiges",
         zahlungsintervall: "monatlich",
         zahlungsmonate: [],
-        startdatum: new Date().toISOString().split('T')[0]
+        startdatum: new Date().toISOString().split('T')[0],
+		enddatum: null
       },
       editedAusgabe: {
         id: null,
@@ -457,7 +462,7 @@ export default {
       });
     }
   },
-  methods: {
+  methods: {	  
   setYearlyPaymentMonth() {
     if(this.neueAusgabe.zahlungsintervall === 'jährlich') {
       this.neueAusgabe.zahlungsmonate = [this.jahresZahlungsmonat];
@@ -642,7 +647,8 @@ export default {
           kategorie: "Sonstiges",
           zahlungsintervall: "monatlich",
           zahlungsmonate: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-          startdatum: new Date().toISOString().split('T')[0]
+          startdatum: new Date().toISOString().split('T')[0],
+          enddatum: null //Neues Feld  
         };
         
         // Modal schließen
