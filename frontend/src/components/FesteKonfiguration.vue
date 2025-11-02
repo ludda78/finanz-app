@@ -148,6 +148,7 @@
               <td>
                 <button @click="editAusgabe(ausgabe), console.log('Edit clicked');" class="edit-button">Bearbeiten</button>
                 <button @click="deleteAusgabe(ausgabe.id)" class="delete-button">Löschen</button>
+				<button class="edit-button" @click="openChangesFor(ausgabe, 'ausgabe')">Änderungen</button>
               </td>
             </tr>
           </tbody>
@@ -346,6 +347,7 @@
               <td>
                 <button @click="editEinnahme(einnahme)" class="edit-button">Bearbeiten</button>
                 <button @click="deleteEinnahme(einnahme.id)" class="delete-button">Löschen</button>
+				<button class="edit-button" @click="openChangesFor(einnahme, 'einnahme')">Änderungen</button>
               </td>
             </tr>
           </tbody>
@@ -408,6 +410,61 @@
         </div>
       </div>
     </div>
+    <!-- Modal: Änderungen einer festen Position -->
+    <div v-if="showChangesModal" class="modal">
+      <div class="modal-content">
+        <h3>Änderungen – {{ selectedItem?.bezeichnung }}</h3>
+        <p class="text-muted" v-if="selectedItem">Basisbetrag: {{ selectedItem.basisBetrag ?? '—' }} €</p>
+
+        <form @submit.prevent="createChange" class="row g-2 align-items-end mb-3">
+          <div class="form-group" style="flex:1">
+            <label><small>Gültig ab</small></label>
+            <input type="date" v-model="newChange.gueltig_ab" class="form-control" required />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label><small>Betrag (€)</small></label>
+            <input type="number" step="0.01" v-model.number="newChange.betrag" class="form-control" required />
+          </div>
+          <div class="form-group" style="width:180px; text-align:right">
+            <button class="save-button" type="submit">+ Änderung</button>
+          </div>
+        </form>
+
+      <div v-if="changesLoading">Lade Änderungen…</div>
+      <div v-else>
+        <div v-if="!changes.length" class="alert alert-info">Keine Änderungen vorhanden. Es gilt der Basisbetrag.</div>
+        <table v-else class="table table-sm">
+          <thead>
+            <tr>
+              <th>Gültig ab</th>
+              <th class="text-end">Betrag</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in changes" :key="row.id">
+              <td>
+                <input type="date" class="form-control form-control-sm" v-model="row._edit.gueltig_ab" />
+              </td>
+              <td class="text-end">
+                <input type="number" step="0.01" class="form-control form-control-sm text-end" v-model.number="row._edit.betrag" />
+              </td>
+              <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                  <button class="edit-button" @click="saveChange(row)">Speichern</button>
+                  <button class="delete-button" @click="deleteChange(row)">Löschen</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="text-end mt-2">
+        <button class="cancel-button" @click="showChangesModal=false">Schließen</button>
+      </div>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -416,6 +473,8 @@ import axios from "axios";
 const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
 const apiUrlAusgabe = `${apiBaseUrl}/feste-ausgaben`;
 const apiUrlEinnahme = `${apiBaseUrl}/feste_einnahmen`;
+const apiUrlAusgabeChangesBase = `${apiBaseUrl}/feste-ausgaben`;
+const apiUrlEinnahmeChangesBase = `${apiBaseUrl}/feste-einnahmen`;
 
 export default {  
   name: "FesteKonfiguration",
@@ -478,6 +537,16 @@ export default {
        "Sonstiges",
        "Anteile Andrea"
       ],
+      // --- Änderungen (gemeinsame Modal-UI für Ausgaben & Einnahmen)
+      showChangesModal: false,
+      changesLoading: false,
+      changes: [], // Array von { id, gueltig_ab, betrag }
+      selectedItem: null, // { id, typ: 'ausgabe' | 'einnahme', bezeichnung: string, basisBetrag: number|null }
+      // Eingabe für neue Änderung
+      newChange: {
+        gueltig_ab: new Date().toISOString().split('T')[0],
+        betrag: null,
+      },
     };
   },
   mounted() {
@@ -876,7 +945,98 @@ export default {
         console.error("Fehler beim Löschen der Einnahme:", error);
         alert("Fehler beim Löschen: " + (error.response?.data?.detail || error.message));
       }
-	}
+	},
+	// Öffnet Änderungs-Modal für eine feste Position
+    openChangesFor(item, typ /* 'ausgabe' | 'einnahme' */) {
+      this.selectedItem = {
+        id: item.id,
+        typ,
+        bezeichnung: (typ === 'ausgabe' ? item.beschreibung : item.name) || `#${item.id}`,
+        basisBetrag: item.betrag ?? null,
+      };
+      this.showChangesModal = true;
+      this.loadChanges();
+    },
+
+
+    // Lädt Änderungen zur aktuellen Auswahl
+    async loadChanges() {
+      if (!this.selectedItem) return;
+      this.changesLoading = true;
+      try {
+        const base = this.selectedItem.typ === 'ausgabe' ? apiUrlAusgabeChangesBase : apiUrlEinnahmeChangesBase;
+        const url = `${base}/${this.selectedItem.id}/aenderungen`;
+        const res = await axios.get(url);
+        // aufsteigend sortieren & Edit-Puffer anlegen
+        const rows = (res.data || []).sort((a,b)=> a.gueltig_ab.localeCompare(b.gueltig_ab))
+          .map(x => ({ ...x, _edit: { gueltig_ab: x.gueltig_ab, betrag: x.betrag } }));
+        this.changes = rows;
+      } catch (e) {
+        console.error('Änderungen laden fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Laden der Änderungen');
+      } finally {
+        this.changesLoading = false;
+      }
+    },
+
+
+    // Neue Änderung anlegen (Regel B: gilt im selben Monat)
+    async createChange() {
+      if (!this.selectedItem) return;
+      try {
+        const base = this.selectedItem.typ === 'ausgabe' ? apiUrlAusgabeChangesBase : apiUrlEinnahmeChangesBase;
+        const url = `${base}/${this.selectedItem.id}/aenderungen`;
+        await axios.post(url, {
+          gueltig_ab: this.newChange.gueltig_ab,
+          betrag: Number(this.newChange.betrag),
+        });
+        // Reset Eingabe + Liste neu laden
+        this.newChange = { gueltig_ab: new Date().toISOString().split('T')[0], betrag: null };
+        await this.loadChanges();
+      } catch (e) {
+        console.error('Anlegen fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Anlegen');
+      }
+    },
+
+
+    // Bestehende Änderung speichern (PATCH)
+    async saveChange(row) {
+      try {
+        const payload = {};
+        if (row._edit.gueltig_ab !== row.gueltig_ab) payload.gueltig_ab = row._edit.gueltig_ab;
+        if (row._edit.betrag !== row.betrag) payload.betrag = Number(row._edit.betrag);
+        if (Object.keys(payload).length === 0) return; // nichts zu tun
+
+
+        const url = (this.selectedItem.typ === 'ausgabe')
+          ? `${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
+          : `${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
+
+
+         await axios.patch(url, payload);
+         await this.loadChanges();
+      } catch (e) {
+        console.error('Speichern fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Speichern');
+      }
+    },
+
+
+    // Änderung löschen
+    async deleteChange(row) {
+      if (!confirm('Änderung wirklich löschen?')) return;
+      try {
+        const url = (this.selectedItem.typ === 'ausgabe')
+        ? `${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
+        : `${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
+        await axios.delete(url);
+        await this.loadChanges();
+      } catch (e) {
+        console.error('Löschen fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Löschen');
+      }
+    },
   },
   
 watch: {
@@ -998,4 +1158,7 @@ watch: {
 .modal-content h3 {
   margin-top: 0;
 }
+
+.table-sm input.form-control-sm { height: 32px; padding: 2px 6px; }
+
 </style>

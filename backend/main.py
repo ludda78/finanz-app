@@ -131,7 +131,14 @@ def get_db_connection():
         port=DB_PORT,
         cursor_factory=RealDictCursor
     )
-
+    
+def get_db_psycopg():
+    conn = get_db_connection()  # <- deine Funktion, die psycopg2.connect(...) zurückgibt
+    try:
+        yield conn
+    finally:
+        conn.close()
+        
 @app.get("/feste-ausgaben/")
 def get_feste_ausgaben():
     conn = get_db_connection()
@@ -507,121 +514,162 @@ def update_ungeplante_einnahme(einnahme_id: int, einnahme: UngeplanteEinnahme):
         conn.close()
     return updated_einnahme
 
-@app.get("/monatsuebersicht/{monat}/{jahr}", response_model=Monatsuebersicht)
-def get_monatsuebersicht(monat: int, jahr: int):
-    conn = get_db_connection()
-    cur = conn.cursor()
+@app.get("/monatsuebersicht/{monat}/{jahr}", response_model=schemas.MonatsuebersichtResponse)
+def get_monatsuebersicht(monat: int, jahr: int, db: Session = Depends(get_db)):
+    stichtag = date(jahr, monat, 1)
 
-    # Datum für den angegebenen Monat und Jahr erstellen
-    erster_des_monats = f"{jahr}-{monat:02d}-01"
-    
-    # Abfrage der festen Ausgaben für den Monat mit Berücksichtigung von Start- und Enddatum
-    cur.execute("""
-        SELECT * FROM feste_ausgaben
-        WHERE %s = ANY(zahlungsmonate)
-        AND (startdatum IS NULL OR startdatum <= %s)
-        AND (enddatum IS NULL OR enddatum >= %s)
-        """, (monat, erster_des_monats, erster_des_monats))
+    # Feste AUSGABEN (ohne Andrea) mit effektivem Betrag
+    ausgaben_sql = text("""
+        SELECT
+            fa.id,
+            fa.beschreibung,
+            COALESCE((
+                SELECT aa.betrag
+                  FROM ausgaben_aenderungen aa
+                 WHERE aa.ausgabe_id = fa.id
+                   AND aa.gueltig_ab <= :stichtag
+              ORDER BY aa.gueltig_ab DESC
+                 LIMIT 1
+            ), fa.betrag) AS betrag,
+            fa.kategorie,
+            fa.zahlungsintervall,
+            fa.zahlungsmonate,
+            fa.startdatum,
+            fa.enddatum,
+            fa.erstellt_am::date AS erstellt_am
+        FROM feste_ausgaben fa
+        WHERE :monat = ANY(fa.zahlungsmonate)
+          AND (fa.startdatum IS NULL OR fa.startdatum <= :stichtag)
+          AND (fa.enddatum   IS NULL OR fa.enddatum   >= :stichtag)
+        ORDER BY lower(fa.beschreibung)
+    """)
+    ausgaben_rows = db.execute(ausgaben_sql, {"stichtag": stichtag, "monat": monat}).fetchall()
+    feste_ausgaben = [dict(r._mapping) for r in ausgaben_rows]
 
-    feste_ausgaben = cur.fetchall()
+    # ---- Dynamisch feststellen, wie das "Beschreibung"-Feld bei feste_einnahmen heißt ----
+    # ---- Spalten von feste_einnahmen ermitteln ----
+    cols = db.execute(text("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'feste_einnahmen'
+    """)).fetchall()
+    colnames = {r[0] for r in cols}
 
-     # Feste Einnahmen abrufen (mit Datumskorridor)
-    cur.execute("""
-        SELECT * FROM feste_einnahmen
-        WHERE %s = ANY(zahlungsmonate)
-          AND (startdatum IS NULL OR startdatum <= %s)
-          AND (enddatum   IS NULL OR enddatum   >= %s)
-    """, (monat, erster_des_monats, erster_des_monats))
-    
-    feste_einnahmen = [dict(row) for row in cur.fetchall()]
-   
-    for einnahme in feste_einnahmen:
-        einnahme['betrag'] = float(einnahme['betrag'])
-        if einnahme.get('startdatum'):
-            einnahme['startdatum'] = einnahme['startdatum'].isoformat()
-        if einnahme.get('enddatum'):
-            einnahme['enddatum'] = einnahme['enddatum'].isoformat()
+    # Feld für "Beschreibung" finden (oder Fallback)
+    candidates = ["beschreibung", "name", "titel", "bezeichnung", "quelle"]
+    label_col = next((c for c in candidates if c in colnames), None)
+    if label_col:
+        label_select = f"fe.{label_col} AS beschreibung"
+        order_by = f"ORDER BY lower(fe.{label_col})"
+    else:
+        label_select = "('Einnahme #' || fe.id)::text AS beschreibung"
+        order_by = "ORDER BY fe.id"
 
-    # Abfrage der ungeplanten Ausgaben für den Monat
-    cur.execute("""
-        SELECT * FROM ungeplante_ausgaben
-        WHERE EXTRACT(MONTH FROM datum) = %s
-        AND EXTRACT(YEAR FROM datum) = %s;
-    """, (monat, jahr))
-    ungeplante_ausgaben = cur.fetchall()
+    # Select-Liste nur mit existierenden Spalten zusammenstellen
+    select_parts = [
+        "fe.id",
+        label_select,
+        "COALESCE((SELECT ea.betrag FROM einnahmen_aenderungen ea "
+        "          WHERE ea.einnahme_id = fe.id AND ea.gueltig_ab <= :stichtag "
+        "          ORDER BY ea.gueltig_ab DESC LIMIT 1), fe.betrag) AS betrag"
+    ]
 
-    # Abfrage der ungeplanten Einnahmen für den Monat
-    cur.execute("""
-        SELECT * FROM ungeplante_einnahmen
-        WHERE EXTRACT(MONTH FROM datum) = %s
-        AND EXTRACT(YEAR FROM datum) = %s;
-    """, (monat, jahr))
-    ungeplante_einnahmen = cur.fetchall()
+    # optionale Spalten:
+    for opt in ["kategorie", "zahlungsintervall", "zahlungsmonate", "startdatum", "enddatum"]:
+        if opt in colnames:
+            select_parts.append(f"fe.{opt}")
 
-    # Konvertiere alle feste_ausgaben zu Dictionaries, um Modifikationen zu erlauben
-    feste_ausgaben = [dict(row) for row in feste_ausgaben]
-    
-    # Umwandeln von datetime und date Objekten in String (ISO 8601 Format)
-    for ausgabe in feste_ausgaben:
-        if ausgabe['startdatum']:
-            ausgabe['startdatum'] = ausgabe['startdatum'].isoformat()
-        if ausgabe['enddatum']:
-            ausgabe['enddatum'] = ausgabe['enddatum'].isoformat()
-            
-    # Konvertiere ungeplante_ausgaben zu Dictionaries für Modifikationen
-    ungeplante_ausgaben = [dict(row) for row in ungeplante_ausgaben]
-    for ausgabe in ungeplante_ausgaben:
-        if ausgabe['datum']:
-            ausgabe['datum'] = ausgabe['datum'].isoformat()
-        if ausgabe['erstellt_am']:
-            ausgabe['erstellt_am'] = ausgabe['erstellt_am'].isoformat()
+    # erstellt_am speziell: falls vorhanden -> ::date, sonst NULL::date alias
+    if "erstellt_am" in colnames:
+        select_parts.append("fe.erstellt_am::date AS erstellt_am")
+    else:
+        select_parts.append("NULL::date AS erstellt_am")
 
-    # Konvertiere ungeplante_einnahmen zu Dictionaries für Modifikationen
-    ungeplante_einnahmen = [dict(row) for row in ungeplante_einnahmen]
-    for einnahme in ungeplante_einnahmen:
-        if einnahme['datum']:
-            einnahme['datum'] = einnahme['datum'].isoformat()
-        if einnahme['erstellt_am']:
-            einnahme['erstellt_am'] = einnahme['erstellt_am'].isoformat()
+    # WHERE-Bedingungen ebenfalls nur hinzufügen, wenn Spalte existiert:
+    where_parts = []
+    if "zahlungsmonate" in colnames:
+        where_parts.append(":monat = ANY(fe.zahlungsmonate)")
+    if "startdatum" in colnames:
+        where_parts.append("(fe.startdatum IS NULL OR fe.startdatum <= :stichtag)")
+    if "enddatum" in colnames:
+        where_parts.append("(fe.enddatum IS NULL OR fe.enddatum >= :stichtag)")
 
-    conn.close()
+    # Falls es eine der Spalten nicht gibt, wenigstens nicht an ihr filtern
+    where_sql = " AND ".join(where_parts) if where_parts else "TRUE"
 
-    # Monatsübersicht zurückgeben
+    # Finale SQL
+    einnahmen_sql = text(f"""
+        SELECT {", ".join(select_parts)}
+        FROM feste_einnahmen fe
+        WHERE {where_sql}
+        {order_by}
+    """)
+
+    einnahmen_rows = db.execute(einnahmen_sql, {"stichtag": stichtag, "monat": monat}).fetchall()
+    feste_einnahmen = [dict(r._mapping) for r in einnahmen_rows]
+
+    # Ungeplante AUSGABEN/EINNAHMEN
+    ungepl_ausg_sql = text("""
+        SELECT id, beschreibung, betrag, kategorie, datum, erstellt_am::date AS erstellt_am
+FROM ungeplante_ausgaben
+         WHERE EXTRACT(MONTH FROM datum) = :monat
+           AND EXTRACT(YEAR  FROM datum) = :jahr
+         ORDER BY datum, id
+    """)
+    ungepl_einn_sql = text("""
+        SELECT id, beschreibung, betrag, datum, erstellt_am::date AS erstellt_am
+        FROM ungeplante_einnahmen
+         WHERE EXTRACT(MONTH FROM datum) = :monat
+           AND EXTRACT(YEAR  FROM datum) = :jahr
+         ORDER BY datum, id
+    """)
+    ungeplante_ausgaben = [dict(r._mapping) for r in db.execute(ungepl_ausg_sql, {"monat": monat, "jahr": jahr}).fetchall()]
+    ungeplante_einnahmen = [dict(r._mapping) for r in db.execute(ungepl_einn_sql, {"monat": monat, "jahr": jahr}).fetchall()]
+
+    # Summen
+    gesamt_ausgaben = float(
+        sum(float(x["betrag"] or 0) for x in feste_ausgaben) +
+        sum(float(x["betrag"] or 0) for x in ungeplante_ausgaben)
+    )
+    gesamt_einnahmen = float(
+        sum(float(x["betrag"] or 0) for x in feste_einnahmen) +
+        sum(float(x["betrag"] or 0) for x in ungeplante_einnahmen)
+    )
+
     return {
         "monat": monat,
         "jahr": jahr,
         "feste_ausgaben": feste_ausgaben,
-        "feste_einnahmen": feste_einnahmen,
         "ungeplante_ausgaben": ungeplante_ausgaben,
         "ungeplante_einnahmen": ungeplante_einnahmen,
+        "feste_einnahmen": feste_einnahmen,
+        "gesamt_ausgaben": gesamt_ausgaben,
+        "gesamt_einnahmen": gesamt_einnahmen,
     }
 
 
 @app.get("/monatswerte/{monat}/{jahr}")
-async def get_monatswerte(monat: int, jahr: int, db: Session = Depends(get_db)):
-    # Manuelle SQL-Abfrage zum Testen
-    sql = f"SELECT * FROM monatswerte WHERE monat = {monat} AND jahr = {jahr};"
-    result = db.execute(text(sql)).fetchall()
-    
-    # print(f"🔎 Manuelle SQL-Abfrage: {result}")
+def get_monatswerte(monat: int, jahr: int, db: Session = Depends(get_db)):
+    # Sichere, parametrisierte Test-Query (optional)
+    result = db.execute(
+        text("SELECT * FROM monatswerte WHERE monat = :m AND jahr = :j"),
+        {"m": monat, "j": jahr},
+    ).fetchall()
 
-    werte = db.query(Monatswert).filter(
-        Monatswert.monat == monat,
-        Monatswert.jahr == jahr
-    ).all()
-    # print(f"Gefundene Monatswerte für {monat}/{jahr}: {werte}")  # Debugging-Ausgabe
- 
+    # ORM-Query
+    werte = (
+        db.query(Monatswert)
+        .filter(Monatswert.monat == monat, Monatswert.jahr == jahr)
+        .all()
+    )
+
     response = {
         "monatswerte": [
-            {"kategorie": w.kategorie, "eintrag_id": w.eintrag_id, "ist": w.ist} 
+            {"kategorie": w.kategorie, "eintrag_id": w.eintrag_id, "ist": w.ist}
             for w in werte
         ]
     }
-    
-    # print(f"📡 API-Response: {response}")
-    
     return response
-
     
 @app.post("/monatswerte")
 async def set_monatswert(ist_wert_data: dict, db: Session = Depends(get_db)):
@@ -763,7 +811,7 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
             virtueller_kontostand += saldo
 
             # Delta zum Mittel: Wie stark weichen die Ausgaben vom Durchschnitt ab?
-            delta_mittel = ausgaben - mittelwert
+            delta_mittel = mittelwert - ausgaben
 
             # Soll-Kontostand: kumulierte Abweichung über das Jahr
             kumulatives_delta += delta_mittel
@@ -877,91 +925,114 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
             }
         )
     
+
 @app.get("/soll-kontostaende/{jahr}")
-def get_soll_kontostaende_jahr(jahr: int):
+def get_soll_kontostaende_jahr(jahr: int, db: Session = Depends(get_db)):
     """
-    Hole alle Soll-Kontostände für ein Jahr
+    Hole alle Soll-Kontostände für ein Jahr (sortiert nach Monat)
     """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, jahr, monat, kontostand_soll, created_at, updated_at 
-        FROM kontostand_monatsende_soll 
-        WHERE jahr = %s 
-        ORDER BY monat
-    """, (jahr,))
-    kontostaende = cur.fetchall()
-    conn.close()
+    result = db.execute(
+        text("""
+            SELECT id, jahr, monat, kontostand_soll, created_at, updated_at
+            FROM kontostand_monatsende_soll
+            WHERE jahr = :jahr
+            ORDER BY monat
+        """),
+        {"jahr": jahr}
+    ).fetchall()
+
+    # SQLAlchemy liefert Row-Objekte zurück → in Dicts umwandeln
+    kontostaende = [
+        {
+            "id": row.id,
+            "jahr": row.jahr,
+            "monat": row.monat,
+            "kontostand_soll": float(row.kontostand_soll),
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+        for row in result
+    ]
+
     return kontostaende
 
+
 @app.get("/soll-kontostaende/{jahr}/{monat}")
-def get_soll_kontostand_monat(jahr: int, monat: int):
+def get_soll_kontostand_monat(jahr: int, monat: int, db: Session = Depends(get_db)):
     """
     Hole Soll-Kontostand für einen spezifischen Monat
     """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, jahr, monat, kontostand_soll, created_at, updated_at 
-        FROM kontostand_monatsende_soll 
-        WHERE jahr = %s AND monat = %s
-    """, (jahr, monat))
-    kontostand = cur.fetchone()
-    conn.close()
-    
-    if not kontostand:
+    row = db.execute(
+        text("""
+            SELECT id, jahr, monat, kontostand_soll, created_at, updated_at
+            FROM kontostand_monatsende_soll
+            WHERE jahr = :jahr AND monat = :monat
+        """),
+        {"jahr": jahr, "monat": monat}
+    ).fetchone()
+
+    if not row:
         raise HTTPException(status_code=404, detail="Soll-Kontostand nicht gefunden")
-    
-    return kontostand
+
+    return {
+        "id": row.id,
+        "jahr": row.jahr,
+        "monat": row.monat,
+        "kontostand_soll": float(row.kontostand_soll),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
 
 @app.post("/soll-kontostaende/berechnen/{jahr}")
-def berechne_und_speichere_soll_kontostaende(jahr: int):
+def berechne_und_speichere_soll_kontostaende(jahr: int, db: Session = Depends(get_db)):
     """
-    Berechnet und speichert alle Soll-Kontostände für ein Jahr neu
+    Berechnet und speichert alle Soll-Kontostände für ein Jahr neu.
+    Nutzt SQLAlchemy Session statt roher psycopg2-Connection.
     """
     try:
-        conn = get_db_connection()
-        
-        # Berechne die Soll-Kontostände
-        soll_kontostaende = berechne_soll_kontostaende_fuer_jahr(conn, jahr)
-        
-        # 🔎 Debug-Ausgabe zum Vergleich mit Vue
-        # print("\n=== DEBUG: Soll-Kontostände Backend-Berechnung ===")
-        verify_jahresuebersicht_calculation(conn, jahr)
-        # print("=== ENDE DEBUG ===\n")
+        # 1️⃣ Berechne Soll-Kontostände (Liste mit 12 Monatswerten)
+        soll_kontostaende = berechne_soll_kontostaende_fuer_jahr(db, jahr)
 
-        cur = conn.cursor()
-        
-        for monat, kontostand in enumerate(soll_kontostaende, 1):
-            # Prüfe ob Eintrag bereits existiert
-            cur.execute("""
-                SELECT id FROM kontostand_monatsende_soll 
-                WHERE jahr = %s AND monat = %s
-            """, (jahr, monat))
-            existing = cur.fetchone()
-            
+        # 2️⃣ Iteriere über die Ergebnisse und schreibe sie in die DB
+        for eintrag in soll_kontostaende:
+            monat = eintrag["monat"]
+            kontostand = float(eintrag["soll_kontostand"])
+
+            # Prüfe, ob Eintrag existiert
+            existing = db.execute(
+                text("""
+                    SELECT id FROM kontostand_monatsende_soll
+                    WHERE jahr = :jahr AND monat = :monat
+                """),
+                {"jahr": jahr, "monat": monat}
+            ).fetchone()
+
             if existing:
-                # Update existierenden Eintrag
-                cur.execute("""
-                    UPDATE kontostand_monatsende_soll 
-                    SET kontostand_soll = %s, updated_at = CURRENT_TIMESTAMP 
-                    WHERE jahr = %s AND monat = %s
-                """, (float(kontostand), jahr, monat))
+                db.execute(
+                    text("""
+                        UPDATE kontostand_monatsende_soll
+                        SET kontostand_soll = :kontostand,
+                            updated_at = :now
+                        WHERE jahr = :jahr AND monat = :monat
+                    """),
+                    {"kontostand": kontostand, "jahr": jahr, "monat": monat, "now": datetime.utcnow()}
+                )
             else:
-                # Erstelle neuen Eintrag
-                cur.execute("""
-                    INSERT INTO kontostand_monatsende_soll (jahr, monat, kontostand_soll) 
-                    VALUES (%s, %s, %s)
-                """, (jahr, monat, float(kontostand)))
-        
-        conn.commit()
-        conn.close()
-        
+                db.execute(
+                    text("""
+                        INSERT INTO kontostand_monatsende_soll (jahr, monat, kontostand_soll)
+                        VALUES (:jahr, :monat, :kontostand)
+                    """),
+                    {"jahr": jahr, "monat": monat, "kontostand": kontostand}
+                )
+
+        # 3️⃣ Commit durchführen
+        db.commit()
+
         return {"message": f"Soll-Kontostände für {jahr} erfolgreich berechnet und gespeichert"}
+
     except Exception as e:
-        if 'conn' in locals():
-            conn.rollback()
-            conn.close()
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Fehler beim Berechnen: {str(e)}")
 
 @app.put("/soll-kontostaende/{jahr}/{monat}")
@@ -1020,19 +1091,79 @@ def get_ist_kontostand(jahr: int, monat: int, db: Session = Depends(get_db)):
         
 # Ausgaben-Änderungen
 @app.post("/feste-ausgaben/{ausgabe_id}/aenderungen", response_model=schemas.AusgabeAenderung)
-def add_ausgabe_aenderung(ausgabe_id: int, aenderung: schemas.AusgabeAenderungCreate, db=Depends(get_db)):
+def add_ausgabe_aenderung(ausgabe_id: int,
+                          aenderung: schemas.AusgabeAenderungCreate,
+                          db: Session = Depends(get_db)):
     return crud.create_ausgabe_aenderung(db, ausgabe_id, aenderung)
 
 @app.get("/feste-ausgaben/{ausgabe_id}/aenderungen", response_model=list[schemas.AusgabeAenderung])
-def list_ausgabe_aenderungen(ausgabe_id: int, db=Depends(get_db)):
+def list_ausgabe_aenderungen(ausgabe_id: int,
+                             db: Session = Depends(get_db)):
     return crud.get_ausgabe_aenderungen(db, ausgabe_id)
 
 # Einnahmen-Änderungen
 @app.post("/feste-einnahmen/{einnahme_id}/aenderungen", response_model=schemas.EinnahmeAenderung)
-def add_einnahme_aenderung(einnahme_id: int, aenderung: schemas.EinnahmeAenderungCreate, db=Depends(get_db)):
+def add_einnahme_aenderung(einnahme_id: int,
+                           aenderung: schemas.EinnahmeAenderungCreate,
+                           db: Session = Depends(get_db)):
     return crud.create_einnahme_aenderung(db, einnahme_id, aenderung)
 
 @app.get("/feste-einnahmen/{einnahme_id}/aenderungen", response_model=list[schemas.EinnahmeAenderung])
-def list_einnahme_aenderungen(einnahme_id: int, db=Depends(get_db)):
+def list_einnahme_aenderungen(einnahme_id: int,
+                              db: Session = Depends(get_db)):
     return crud.get_einnahme_aenderungen(db, einnahme_id)
-    
+
+@app.get("/feste-ausgaben/{ausgabe_id}/effektiv-im-monat")
+def ausgabe_effektiv_im_monat(ausgabe_id: int, jahr: int, monat: int,
+                              db: Session = Depends(get_db)):
+    # Falls du die Hilfsfunktionen in crud belassen hast:
+    from crud import effektiv_ausgabe_im_monat
+    return {
+        "ausgabe_id": ausgabe_id, "jahr": jahr, "monat": monat,
+        "betrag": effektiv_ausgabe_im_monat(db, ausgabe_id, jahr, monat)
+    }
+
+@app.get("/feste-einnahmen/{einnahme_id}/effektiv-im-monat")
+def einnahme_effektiv_im_monat(einnahme_id: int, jahr: int, monat: int,
+                               db: Session = Depends(get_db)):
+    from crud import effektiv_einnahme_im_monat
+    return {
+        "einnahme_id": einnahme_id, "jahr": jahr, "monat": monat,
+        "betrag": effektiv_einnahme_im_monat(db, einnahme_id, jahr, monat)
+    }
+
+@app.get("/feste-ausgaben/monats-summen")
+def get_ausgaben_monatssummen(jahr: int, db: Session = Depends(get_db)):
+    return crud.ausgaben_monatssummen(db, jahr)
+
+@app.get("/feste-einnahmen/monats-summen")
+def get_einnahmen_monatssummen(jahr: int, db: Session = Depends(get_db)):
+    return crud.einnahmen_monatssummen(db, jahr)
+
+@app.patch("/feste-ausgaben/aenderungen/{aenderung_id}", response_model=schemas.AusgabeAenderung)
+def patch_ausgabe_aenderung(aenderung_id: int,
+                            body: schemas.AusgabeAenderungUpdate,
+                            db: Session = Depends(get_db)):
+    return crud.update_ausgabe_aenderung(db, aenderung_id, body)
+
+@app.delete("/feste-ausgaben/aenderungen/{aenderung_id}")
+def del_ausgabe_aenderung(aenderung_id: int, db: Session = Depends(get_db)):
+    return crud.delete_ausgabe_aenderung(db, aenderung_id)
+
+@app.patch("/feste-einnahmen/aenderungen/{aenderung_id}", response_model=schemas.EinnahmeAenderung)
+def patch_einnahme_aenderung(aenderung_id: int,
+                             body: schemas.EinnahmeAenderungUpdate,
+                             db: Session = Depends(get_db)):
+    return crud.update_einnahme_aenderung(db, aenderung_id, body)
+
+@app.delete("/feste-einnahmen/aenderungen/{aenderung_id}")
+def del_einnahme_aenderung(aenderung_id: int, db: Session = Depends(get_db)):
+    return crud.delete_einnahme_aenderung(db, aenderung_id)
+
+@app.get("/feste-ausgaben/{ausgabe_id}/timeline")
+def get_timeline_ausgabe(ausgabe_id: int, jahr: int, db: Session = Depends(get_db)):
+    return crud.timeline_ausgabe(db, ausgabe_id, jahr)
+
+@app.get("/feste-einnahmen/{einnahme_id}/timeline")
+def get_timeline_einnahme(einnahme_id: int, jahr: int, db: Session = Depends(get_db)):
+    return crud.timeline_einnahme(db, einnahme_id, jahr)

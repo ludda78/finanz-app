@@ -1,26 +1,23 @@
+from datetime import date, datetime
+from typing import List, Optional
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import models
 import schemas
-from datetime import datetime
-from sqlalchemy import and_, text
-from typing import List, Optional
-from decimal import Decimal
-from sqlalchemy import text
-from datetime import date
+
 
 DEBUG = False  # zentraler Schalter
 
 
-def debug_alle_kategorien(conn):
+def debug_alle_kategorien(db: Session):
     if not DEBUG:
         return
-    cur = conn.cursor()
     try:
-        cur.execute("SELECT DISTINCT kategorie FROM feste_ausgaben ORDER BY kategorie")
-        kategorien = cur.fetchall()
+        res = db.execute(text("SELECT DISTINCT kategorie FROM feste_ausgaben ORDER BY kategorie"))
         print("\n=== DEBUG: Alle Kategorien in feste_ausgaben ===")
-        for row in kategorien:
-            value = row[0] if isinstance(row, tuple) else row.get("kategorie")
+        for row in res.fetchall():
+            value = row._mapping["kategorie"]
             if value is None:
                 print("NULL / None")
             else:
@@ -41,20 +38,26 @@ def create_ungeplante_transaktion(db: Session, transaktion: schemas.UngeplantTra
         monat=transaktion.monat,
         jahr=transaktion.jahr,
         datum=transaktion.datum or datetime.now(),
-        status=transaktion.status or "kein_ausgleich"  # Status-Feld hinzufügen
+        status=transaktion.status or "kein_ausgleich",
     )
     db.add(db_transaktion)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(db_transaktion)
     return db_transaktion
 
-def get_ungeplante_transaktionen(db: Session, monat: int, jahr: int):
-    return db.query(models.UngeplantTransaktion).filter(
-        models.UngeplantTransaktion.monat == monat, 
-        models.UngeplantTransaktion.jahr == jahr
-    ).all()
 
-def berechne_soll_kontostaende_fuer_jahr(conn, jahr):
+def get_ungeplante_transaktionen(db: Session, monat: int, jahr: int):
+    return (
+        db.query(models.UngeplantTransaktion)
+        .filter(models.UngeplantTransaktion.monat == monat, models.UngeplantTransaktion.jahr == jahr)
+        .all()
+    )
+
+def berechne_soll_kontostaende_fuer_jahr(db: Session, jahr: int):
     """
     Berechnet mehrere Kennzahlen:
     - Summe Ausgaben / Einnahmen
@@ -63,7 +66,7 @@ def berechne_soll_kontostaende_fuer_jahr(conn, jahr):
     - Delta zum Ausgaben-Mittel
     - Kontostand Monatsende Soll
     """
-    monatliches_mittel_ausgaben = get_monatliches_mittel_feste_ausgaben_ohne_andrea(conn, jahr)
+    monatliches_mittel_ausgaben = get_monatliches_mittel_feste_ausgaben_ohne_andrea(db, jahr)
 
     if DEBUG:
         print(f"\n=== DEBUG: Berechne Soll-Kontostände für {jahr} ===")
@@ -77,8 +80,8 @@ def berechne_soll_kontostaende_fuer_jahr(conn, jahr):
     kumulatives_delta = 0  # für Soll-Kontostand
 
     for monat in range(1, 13):
-        ausgaben = get_feste_ausgaben_monat_jahresuebersicht(conn, jahr, monat)
-        einnahmen = get_feste_einnahmen_monat_jahresuebersicht(conn, jahr, monat)
+        ausgaben = get_feste_ausgaben_monat_jahresuebersicht(db, jahr, monat)
+        einnahmen = get_feste_einnahmen_monat_jahresuebersicht(db, jahr, monat)
 
         saldo = einnahmen - ausgaben
         virtueller_kontostand += saldo
@@ -153,86 +156,88 @@ def get_monatliches_mittel_feste_ausgaben_ohne_andrea(db, jahr: int) -> float:
         return 0.0
 
 
-def update_feste_ausgabe(conn, ausgabe_id: int, daten: dict):
-    """
-    Aktualisiert eine feste Ausgabe (inkl. Enddatum)
-    Erwartet ein dict mit den Schlüsseln:
-    beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum
-    """
-    cur = conn.cursor()
-    cur.execute("""
+def update_feste_ausgabe(db: Session, ausgabe_id: int, daten: dict):
+    stmt = text("""
         UPDATE feste_ausgaben
-        SET beschreibung = %s,
-            betrag = %s,
-            kategorie = %s,
-            zahlungsintervall = %s,
-            zahlungsmonate = %s,
-            startdatum = %s,
-            enddatum = %s
-        WHERE id = %s
-        RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum;
-    """, (
-        daten["beschreibung"],
-        daten["betrag"],
-        daten["kategorie"],
-        daten.get("zahlungsintervall"),
-        daten.get("zahlungsmonate"),
-        daten["startdatum"],
-        daten.get("enddatum"),  # ✅ optional
-        ausgabe_id
-    ))
-    result = cur.fetchone()
-    conn.commit()
-    return dict(result._mapping) if result else None
+           SET beschreibung = :beschreibung,
+               betrag = :betrag,
+               kategorie = :kategorie,
+               zahlungsintervall = :zahlungsintervall,
+               zahlungsmonate = :zahlungsmonate,
+               startdatum = :startdatum,
+               enddatum = :enddatum
+         WHERE id = :id
+     RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum;
+    """)
+    params = {
+        "beschreibung": daten["beschreibung"],
+        "betrag": daten["betrag"],
+        "kategorie": daten["kategorie"],
+        "zahlungsintervall": daten.get("zahlungsintervall"),
+        "zahlungsmonate": daten.get("zahlungsmonate"),
+        "startdatum": daten["startdatum"],
+        "enddatum": daten.get("enddatum"),
+        "id": ausgabe_id,
+    }
+    try:
+        row = db.execute(stmt, params).fetchone()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping) if row else None
 
 
-def insert_feste_ausgabe(conn, daten: dict):
-    """
-    Fügt eine neue feste Ausgabe hinzu (inkl. optionalem Enddatum)
-    """
-    cur = conn.cursor()
-    cur.execute("""
+def insert_feste_ausgabe(db: Session, daten: dict):
+    stmt = text("""
         INSERT INTO feste_ausgaben (
             beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum, erstellt_am
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum, erstellt_am;
-    """, (
-        daten["beschreibung"],
-        daten["betrag"],
-        daten["kategorie"],
-        daten.get("zahlungsintervall"),
-        daten.get("zahlungsmonate"),
-        daten["startdatum"],
-        daten.get("enddatum"),  # ✅ neu
-        date.today()
-    ))
-    result = cur.fetchone()
-    conn.commit()
-    return dict(result._mapping)
+        ) VALUES (
+            :beschreibung, :betrag, :kategorie, :zahlungsintervall, :zahlungsmonate, :startdatum, :enddatum, :erstellt_am
+        )
+     RETURNING id, beschreibung, betrag, kategorie, zahlungsintervall, zahlungsmonate, startdatum, enddatum, erstellt_am;
+    """)
+    params = {
+        "beschreibung": daten["beschreibung"],
+        "betrag": daten["betrag"],
+        "kategorie": daten["kategorie"],
+        "zahlungsintervall": daten.get("zahlungsintervall"),
+        "zahlungsmonate": daten.get("zahlungsmonate"),
+        "startdatum": daten["startdatum"],
+        "enddatum": daten.get("enddatum"),
+        "erstellt_am": date.today(),
+    }
+    try:
+        row = db.execute(stmt, params).fetchone()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping) if row else None
 
 
-def get_feste_ausgaben_monat_jahresuebersicht(db, jahr, monat):
+def get_feste_ausgaben_monat_jahresuebersicht(db: Session, jahr: int, monat: int) -> float:
     monatsdatum = date(jahr, monat, 1)
     query = text("""
         SELECT SUM(
           COALESCE(
             (SELECT betrag
-             FROM ausgaben_aenderungen aa
-             WHERE aa.ausgabe_id = fa.id
-               AND aa.gueltig_ab <= :datum
-             ORDER BY aa.gueltig_ab DESC
-             LIMIT 1),
+               FROM ausgaben_aenderungen aa
+              WHERE aa.ausgabe_id = fa.id
+                AND aa.gueltig_ab <= :datum
+           ORDER BY aa.gueltig_ab DESC
+              LIMIT 1),
             fa.betrag
           )
         ) AS summe
-        FROM feste_ausgaben fa
-        WHERE (fa.startdatum IS NULL OR fa.startdatum <= :datum)
-          AND (fa.enddatum IS NULL OR fa.enddatum >= :datum)
-          AND :monat = ANY(fa.zahlungsmonate)
-          AND (fa.kategorie IS NULL OR LOWER(fa.kategorie) NOT LIKE '%andrea%')
+          FROM feste_ausgaben fa
+         WHERE (fa.startdatum IS NULL OR fa.startdatum <= :datum)
+           AND (fa.enddatum   IS NULL OR fa.enddatum   >= :datum)
+           AND :monat = ANY(fa.zahlungsmonate)
+           AND (fa.kategorie IS NULL OR LOWER(fa.kategorie) NOT LIKE '%andrea%')
     """)
     result = db.execute(query, {"datum": monatsdatum, "monat": monat}).scalar()
-    return float(result or 0)
+    return float(result or 0.0)
 
 
 
@@ -387,82 +392,326 @@ def save_ist_kontostand(db, payload: dict):
     db.commit()
     return dict(row._mapping) if row else None
 
-def get_ist_kontostand(db, jahr: int, monat: int):
+def get_ist_kontostand(db: Session, jahr: int, monat: int):
     stmt = text("""
-        SELECT * 
-        FROM kontostand_monatsende_ist 
-        WHERE jahr = :jahr AND monat = :monat
+        SELECT *
+          FROM kontostand_monatsende_ist
+         WHERE jahr = :jahr AND monat = :monat
     """)
-    result = db.execute(stmt, {"jahr": jahr, "monat": monat}).fetchone()
-    return dict(result._mapping) if result else {"ist_kontostand": None}
+    row = db.execute(stmt, {"jahr": jahr, "monat": monat}).fetchone()
+    return dict(row._mapping) if row else {"ist_kontostand": None}
 
 # Ausgaben-Änderungen
-def create_ausgabe_aenderung(db, ausgabe_id: int, aenderung: schemas.AusgabeAenderungCreate):
-    cur = db.cursor()
-    cur.execute("""
+def create_ausgabe_aenderung(db: Session, ausgabe_id: int, aenderung: schemas.AusgabeAenderungCreate):
+    stmt = text("""
         INSERT INTO ausgaben_aenderungen (ausgabe_id, gueltig_ab, betrag)
-        VALUES (%s, %s, %s)
-        RETURNING id, ausgabe_id, gueltig_ab, betrag, erstellt_am
-    """, (ausgabe_id, aenderung.gueltig_ab, aenderung.betrag))
-    result = cur.fetchone()
-    db.commit()
-    return dict(result._mapping)
+        VALUES (:ausgabe_id, :gueltig_ab, :betrag)
+     RETURNING id, ausgabe_id, gueltig_ab, betrag, erstellt_am
+    """)
+    params = {
+        "ausgabe_id": ausgabe_id,
+        "gueltig_ab": aenderung.gueltig_ab,
+        "betrag": aenderung.betrag,
+    }
+    try:
+        row = db.execute(stmt, params).fetchone()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping) if row else None
 
-def get_ausgabe_aenderungen(db, ausgabe_id: int):
-    cur = db.cursor()
-    cur.execute("""
-        SELECT * FROM ausgaben_aenderungen
-        WHERE ausgabe_id = %s
-        ORDER BY gueltig_ab ASC
-    """, (ausgabe_id,))
-    return [dict(row._mapping) for row in cur.fetchall()]
+
+def get_ausgabe_aenderungen(db: Session, ausgabe_id: int):
+    stmt = text("""
+        SELECT id, ausgabe_id, gueltig_ab, betrag, erstellt_am
+          FROM ausgaben_aenderungen
+         WHERE ausgabe_id = :ausgabe_id
+      ORDER BY gueltig_ab ASC
+    """)
+    rows = db.execute(stmt, {"ausgabe_id": ausgabe_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
 
 # Einnahmen-Änderungen
-def create_einnahme_aenderung(db, einnahme_id: int, aenderung: schemas.EinnahmeAenderungCreate):
-    cur = db.cursor()
-    cur.execute("""
+def create_einnahme_aenderung(db: Session, einnahme_id: int, aenderung: schemas.EinnahmeAenderungCreate):
+    stmt = text("""
         INSERT INTO einnahmen_aenderungen (einnahme_id, gueltig_ab, betrag)
-        VALUES (%s, %s, %s)
-        RETURNING id, einnahme_id, gueltig_ab, betrag, erstellt_am
-    """, (einnahme_id, aenderung.gueltig_ab, aenderung.betrag))
-    result = cur.fetchone()
-    db.commit()
-    return dict(result._mapping)
+        VALUES (:einnahme_id, :gueltig_ab, :betrag)
+     RETURNING id, einnahme_id, gueltig_ab, betrag, erstellt_am
+    """)
+    params = {
+        "einnahme_id": einnahme_id,
+        "gueltig_ab": aenderung.gueltig_ab,
+        "betrag": aenderung.betrag,
+    }
+    try:
+        row = db.execute(stmt, params).fetchone()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping) if row else None
 
-def get_einnahme_aenderungen(db, einnahme_id: int):
-    cur = db.cursor()
-    cur.execute("""
-        SELECT * FROM einnahmen_aenderungen
-        WHERE einnahme_id = %s
-        ORDER BY gueltig_ab ASC
-    """, (einnahme_id,))
-    return [dict(row._mapping) for row in cur.fetchall()]
 
-def get_feste_einnahmen_monat_jahresuebersicht(db, jahr, monat):
-    """
-    Liefert die Summe aller festen Einnahmen für einen Monat.
-    - Berücksichtigt Änderungen aus einnahmen_aenderungen
-    - Ignoriert Kategorie 'Andrea'
-    """
+def get_einnahme_aenderungen(db: Session, einnahme_id: int):
+    stmt = text("""
+        SELECT id, einnahme_id, gueltig_ab, betrag, erstellt_am
+          FROM einnahmen_aenderungen
+         WHERE einnahme_id = :id
+      ORDER BY gueltig_ab ASC
+    """)
+    rows = db.execute(stmt, {"id": einnahme_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+def get_feste_einnahmen_monat_jahresuebersicht(db: Session, jahr: int, monat: int) -> float:
     monatsdatum = date(jahr, monat, 1)
     query = text("""
         SELECT SUM(
           COALESCE(
             (SELECT betrag
-             FROM einnahmen_aenderungen ea
-             WHERE ea.einnahme_id = fe.id
-               AND ea.gueltig_ab <= :datum
-             ORDER BY ea.gueltig_ab DESC
-             LIMIT 1),
+               FROM einnahmen_aenderungen ea
+              WHERE ea.einnahme_id = fe.id
+                AND ea.gueltig_ab <= :datum
+           ORDER BY ea.gueltig_ab DESC
+              LIMIT 1),
             fe.betrag
           )
         ) AS summe
-        FROM feste_einnahmen fe
-        WHERE :monat = ANY(fe.zahlungsmonate)
-          AND (fe.kategorie IS NULL OR LOWER(fe.kategorie) NOT LIKE '%andrea%')
-          AND (fe.startdatum IS NULL OR fe.startdatum <= :datum)
-          AND (fe.enddatum   IS NULL OR fe.enddatum   >= :datum)
+          FROM feste_einnahmen fe
+         WHERE :monat = ANY(fe.zahlungsmonate)
+           AND (fe.kategorie IS NULL OR LOWER(fe.kategorie) NOT LIKE '%andrea%')
+           AND (fe.startdatum IS NULL OR fe.startdatum <= :datum)
+           AND (fe.enddatum   IS NULL OR fe.enddatum   >= :datum)
     """)
     result = db.execute(query, {"datum": monatsdatum, "monat": monat}).scalar()
-    return float(result or 0)
+    return float(result or 0.0)
 
+def effektiv_ausgabe_im_monat(db: Session, ausgabe_id: int, jahr: int, monat: int) -> float:
+    ms = date(jahr, monat, 1)
+    stmt = text("""
+        SELECT betrag
+          FROM ausgaben_aenderungen
+         WHERE ausgabe_id = :ausgabe_id
+           AND gueltig_ab < (:ms::date + INTERVAL '1 month')
+      ORDER BY gueltig_ab DESC
+         LIMIT 1
+    """)
+    row = db.execute(stmt, {"ausgabe_id": ausgabe_id, "ms": ms}).fetchone()
+    return float(row[0]) if row else 0.0
+
+
+def effektiv_einnahme_im_monat(db: Session, einnahme_id: int, jahr: int, monat: int) -> float:
+    ms = date(jahr, monat, 1)
+    stmt = text("""
+        SELECT betrag
+          FROM einnahmen_aenderungen
+         WHERE einnahme_id = :einnahme_id
+           AND gueltig_ab < (:ms::date + INTERVAL '1 month')
+      ORDER BY gueltig_ab DESC
+         LIMIT 1
+    """)
+    row = db.execute(stmt, {"einnahme_id": einnahme_id, "ms": ms}).fetchone()
+    return float(row[0]) if row else 0.0
+
+
+def ausgaben_monatssummen(db: Session, year: int):
+    stmt = text("""
+        WITH mon AS (
+          SELECT make_date(:year, m, 1)::date AS monat
+            FROM generate_series(1,12) AS m
+        ),
+        ids AS (
+          SELECT id AS ausgabe_id FROM feste_ausgaben
+        ),
+        eff AS (
+          SELECT i.ausgabe_id, m.monat,
+                 COALESCE(a.betrag, 0)::numeric(10,2) AS betrag
+            FROM ids i
+            CROSS JOIN mon m
+            LEFT JOIN LATERAL (
+              SELECT betrag
+                FROM ausgaben_aenderungen
+               WHERE ausgabe_id = i.ausgabe_id
+                 AND gueltig_ab < (m.monat + INTERVAL '1 month')
+            ORDER BY gueltig_ab DESC
+               LIMIT 1
+            ) a ON TRUE
+        )
+        SELECT to_char(monat, 'YYYY-MM') AS ym,
+               SUM(betrag)::numeric(12,2) AS sum_betrag
+          FROM eff
+      GROUP BY ym
+      ORDER BY ym;
+    """)
+    rows = db.execute(stmt, {"year": year}).fetchall()
+    return [dict(r._mapping) for r in rows]
+    
+def einnahmen_monatssummen(db: Session, year: int):
+    stmt = text("""
+        WITH mon AS (
+          SELECT make_date(:year, m, 1)::date AS monat
+            FROM generate_series(1,12) AS m
+        ),
+        ids AS (
+          SELECT id AS einnahme_id FROM feste_einnahmen
+        ),
+        eff AS (
+          SELECT i.einnahme_id, m.monat,
+                 COALESCE(a.betrag, 0)::numeric(10,2) AS betrag
+            FROM ids i
+            CROSS JOIN mon m
+            LEFT JOIN LATERAL (
+              SELECT betrag
+                FROM einnahmen_aenderungen
+               WHERE einnahme_id = i.einnahme_id
+                 AND gueltig_ab < (m.monat + INTERVAL '1 month')
+            ORDER BY gueltig_ab DESC
+               LIMIT 1
+            ) a ON TRUE
+        )
+        SELECT to_char(monat, 'YYYY-MM') AS ym,
+               SUM(betrag)::numeric(12,2) AS sum_betrag
+          FROM eff
+      GROUP BY ym
+      ORDER BY ym;
+    """)
+    rows = db.execute(stmt, {"year": year}).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+def update_ausgabe_aenderung(db: Session, aenderung_id: int, payload: schemas.AusgabeAenderungUpdate):
+    sets, params = [], {"id": aenderung_id}
+    if payload.gueltig_ab is not None:
+        sets.append("gueltig_ab = :gueltig_ab")
+        params["gueltig_ab"] = payload.gueltig_ab
+    if payload.betrag is not None:
+        sets.append("betrag = :betrag")
+        params["betrag"] = payload.betrag
+    if not sets:
+        raise HTTPException(400, detail="Nichts zu aktualisieren.")
+
+    stmt = text(f"""
+        UPDATE ausgaben_aenderungen
+           SET {", ".join(sets)}
+         WHERE id = :id
+     RETURNING id, ausgabe_id, gueltig_ab, betrag, erstellt_am
+    """)
+    try:
+        row = db.execute(stmt, params).fetchone()
+        if not row:
+            db.rollback()
+            raise HTTPException(404, detail="Änderung nicht gefunden.")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping)
+
+
+def delete_ausgabe_aenderung(db: Session, aenderung_id: int):
+    stmt = text("DELETE FROM ausgaben_aenderungen WHERE id = :id RETURNING id")
+    try:
+        row = db.execute(stmt, {"id": aenderung_id}).fetchone()
+        if not row:
+            db.rollback()
+            raise HTTPException(404, detail="Änderung nicht gefunden.")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted_id": aenderung_id}
+    
+def update_einnahme_aenderung(db: Session, aenderung_id: int, payload: schemas.EinnahmeAenderungUpdate):
+    sets, params = [], {"id": aenderung_id}
+    if payload.gueltig_ab is not None:
+        sets.append("gueltig_ab = :gueltig_ab")
+        params["gueltig_ab"] = payload.gueltig_ab
+    if payload.betrag is not None:
+        sets.append("betrag = :betrag")
+        params["betrag"] = payload.betrag
+    if not sets:
+        raise HTTPException(400, detail="Nichts zu aktualisieren.")
+
+    stmt = text(f"""
+        UPDATE einnahmen_aenderungen
+           SET {", ".join(sets)}
+         WHERE id = :id
+     RETURNING id, einnahme_id, gueltig_ab, betrag, erstellt_am
+    """)
+    try:
+        row = db.execute(stmt, params).fetchone()
+        if not row:
+            db.rollback()
+            raise HTTPException(404, detail="Änderung nicht gefunden.")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping)
+
+
+def delete_einnahme_aenderung(db: Session, aenderung_id: int):
+    stmt = text("DELETE FROM einnahmen_aenderungen WHERE id = :id RETURNING id")
+    try:
+        row = db.execute(stmt, {"id": aenderung_id}).fetchone()
+        if not row:
+            db.rollback()
+            raise HTTPException(404, detail="Änderung nicht gefunden.")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted_id": aenderung_id}
+
+def timeline_ausgabe(db: Session, ausgabe_id: int, year: int):
+    stmt = text("""
+        WITH mon AS (
+          SELECT make_date(:year, m, 1)::date AS monat
+            FROM generate_series(1,12) AS m
+        )
+        SELECT to_char(monat,'YYYY-MM') AS ym,
+               COALESCE((
+                 SELECT betrag
+                   FROM ausgaben_aenderungen a
+                  WHERE a.ausgabe_id = :ausgabe_id
+                    AND a.gueltig_ab < (mon.monat + INTERVAL '1 month')
+               ORDER BY a.gueltig_ab DESC
+                  LIMIT 1
+               ), 0)::numeric(12,2) AS betrag
+          FROM mon
+      ORDER BY ym
+    """)
+    rows = db.execute(stmt, {"year": year, "ausgabe_id": ausgabe_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+def timeline_einnahme(db: Session, einnahme_id: int, year: int):
+    stmt = text("""
+        WITH mon AS (
+          SELECT make_date(:year, m, 1)::date AS monat
+            FROM generate_series(1,12) AS m
+        )
+        SELECT to_char(mon.monat,'YYYY-MM') AS ym,
+               COALESCE((
+                 SELECT ea.betrag
+                   FROM einnahmen_aenderungen ea
+                  WHERE ea.einnahme_id = :id
+                    AND ea.gueltig_ab < (mon.monat + INTERVAL '1 month')
+               ORDER BY ea.gueltig_ab DESC
+                  LIMIT 1
+               ), fe.betrag, 0)::numeric(12,2) AS betrag
+          FROM mon
+          JOIN feste_einnahmen fe ON fe.id = :id
+      ORDER BY ym
+    """)
+    rows = db.execute(stmt, {"year": year, "id": einnahme_id}).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+    
