@@ -13,8 +13,20 @@ class FesteAusgabeSchema(BaseModel):
     zahlungsmonate: Optional[List[int]] = None
     startdatum: date
     enddatum: Optional[date] = None
-    erstellt_am: Optional[date] = None
+    erstellt_am: Optional[datetime] = None
 
+    class Config:
+        from_attributes = True
+        
+class FesteEinnahmeSchema(BaseModel):
+    id: int
+    beschreibung: str
+    betrag: float
+    kategorie: Optional[str] = None
+    zahlungsmonate: Optional[List[int]] = None
+    startdatum: Optional[date] = None
+    enddatum: Optional[date] = None
+    erstellt_am: Optional[date] = None
     class Config:
         from_attributes = True
 
@@ -24,7 +36,7 @@ class UngeplanteAusgabeSchema(BaseModel):
     betrag: float
     kategorie: str
     datum: date
-    erstellt_am: Optional[date] = None
+    erstellt_am: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -34,7 +46,7 @@ class UngeplanteEinnahmeSchema(BaseModel):
     beschreibung: str
     betrag: float
     datum: date
-    erstellt_am: Optional[date] = None
+    erstellt_am: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -43,6 +55,7 @@ class MonatsuebersichtResponse(BaseModel):
     monat: int
     jahr: int
     feste_ausgaben: List[FesteAusgabeSchema]
+    feste_einnahmen: List[FesteEinnahmeSchema]          # ⬅️ hinzufügen
     ungeplante_ausgaben: List[UngeplanteAusgabeSchema]
     ungeplante_einnahmen: List[UngeplanteEinnahmeSchema]
     gesamt_ausgaben: float
@@ -78,3 +91,50 @@ class SollKontostand(SollKontostandBase):
     class Config:
         from_attributes = True
 
+class AusgabeAenderungBase(BaseModel):
+    gueltig_ab: date
+    betrag: float
+
+class AusgabeAenderungCreate(AusgabeAenderungBase):
+    pass
+
+class AusgabeAenderung(AusgabeAenderungBase):
+    id: int
+    ausgabe_id: int
+    erstellt_am: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class EinnahmeAenderungBase(BaseModel):
+    gueltig_ab: date
+    betrag: float
+
+class EinnahmeAenderungCreate(EinnahmeAenderungBase):
+    pass
+
+class EinnahmeAenderung(EinnahmeAenderungBase):
+    id: int
+    einnahme_id: int
+    erstellt_am: datetime
+
+    class Config:
+        orm_mode = True
+
+class FesteAusgabeUpdate(BaseModel):
+    beschreibung: str
+    betrag: float
+    kategorie: str
+    zahlungsintervall: Optional[str] = None
+    zahlungsmonate: Optional[List[int]] = None
+    startdatum: date
+    enddatum: Optional[date] = None  # ✅ wichtig
+
+class AusgabeAenderungUpdate(BaseModel):
+    gueltig_ab: Optional[date] = None
+    betrag: Optional[float] = None
+
+class EinnahmeAenderungUpdate(BaseModel):
+    gueltig_ab: Optional[date] = None
+    betrag: Optional[float] = None

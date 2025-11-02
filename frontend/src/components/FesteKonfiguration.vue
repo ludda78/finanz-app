@@ -146,8 +146,9 @@
                 </div>
               </td>
               <td>
-                <button @click="editAusgabe(ausgabe)" class="edit-button">Bearbeiten</button>
+                <button @click="editAusgabe(ausgabe), console.log('Edit clicked');" class="edit-button">Bearbeiten</button>
                 <button @click="deleteAusgabe(ausgabe.id)" class="delete-button">Löschen</button>
+				<button class="edit-button" @click="openChangesFor(ausgabe, 'ausgabe')">Änderungen</button>
               </td>
             </tr>
           </tbody>
@@ -237,7 +238,19 @@
               <label for="edit-startdatum">Startdatum:</label>
               <input id="edit-startdatum" type="date" v-model="editedAusgabe.startdatum" required />
             </div>
-            
+            <div class="form-group mb-3">
+              <label for="edit-enddatum">Enddatum (optional)</label>
+              <input
+                 type="date"
+                 id="edit-enddatum"
+                 v-model="editedAusgabe.enddatum"
+                 class="form-control"
+               />
+              <small class="text-muted">
+              Wenn kein Enddatum gesetzt ist, bleibt die Ausgabe unbegrenzt aktiv.
+              </small>
+            </div>
+
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
               <button type="button" @click="showEditAusgabeForm = false" class="cancel-button">Abbrechen</button>
@@ -287,7 +300,14 @@
                 </label>
               </div>
             </div>
-            
+            <div class="form-group">
+              <label for="einnahme-startdatum">Startdatum:</label>
+              <input id="einnahme-startdatum" type="date" v-model="neueEinnahme.startdatum" required />
+            </div>
+            <div class="form-group">
+              <label for="einnahme-enddatum">Enddatum (optional)</label>
+              <input id="einnahme-enddatum" type="date" v-model="neueEinnahme.enddatum" />
+            </div>
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
               <button type="button" @click="showNeueEinnahmeForm = false" class="cancel-button">Abbrechen</button>
@@ -305,6 +325,8 @@
               <th>Betrag</th>
               <th>Kategorie</th>
               <th>Monate</th>
+              <th>Start</th>
+              <th>Ende</th>
               <th>Aktionen</th>
             </tr>
           </thead>
@@ -320,9 +342,12 @@
                   </span>
                 </div>
               </td>
+              <td>{{ einnahme.startdatum ? einnahme.startdatum.slice(0,10) : "—" }}</td>
+              <td>{{ einnahme.enddatum ? einnahme.enddatum.slice(0,10) : "—" }}</td>
               <td>
                 <button @click="editEinnahme(einnahme)" class="edit-button">Bearbeiten</button>
                 <button @click="deleteEinnahme(einnahme.id)" class="delete-button">Löschen</button>
+				<button class="edit-button" @click="openChangesFor(einnahme, 'einnahme')">Änderungen</button>
               </td>
             </tr>
           </tbody>
@@ -366,7 +391,17 @@
                 </label>
               </div>
             </div>
-            
+            <div class="form-group">
+              <label for="edit-einnahme-startdatum">Startdatum:</label>
+              <input id="edit-einnahme-startdatum" type="date" v-model="editedEinnahme.startdatum" required />
+            </div>
+            <div class="form-group">
+              <label for="edit-einnahme-enddatum">Enddatum (optional)</label>
+              <input id="edit-einnahme-enddatum" type="date" v-model="editedEinnahme.enddatum" />
+              <small class="text-muted">
+               Wenn kein Enddatum gesetzt ist, bleibt die Einnahme unbegrenzt aktiv.
+              </small>
+            </div>
             <div class="form-actions">
               <button type="submit" class="save-button">Speichern</button>
               <button type="button" @click="showEditEinnahmeForm = false" class="cancel-button">Abbrechen</button>
@@ -375,6 +410,61 @@
         </div>
       </div>
     </div>
+    <!-- Modal: Änderungen einer festen Position -->
+    <div v-if="showChangesModal" class="modal">
+      <div class="modal-content">
+        <h3>Änderungen – {{ selectedItem?.bezeichnung }}</h3>
+        <p class="text-muted" v-if="selectedItem">Basisbetrag: {{ selectedItem.basisBetrag ?? '—' }} €</p>
+
+        <form @submit.prevent="createChange" class="row g-2 align-items-end mb-3">
+          <div class="form-group" style="flex:1">
+            <label><small>Gültig ab</small></label>
+            <input type="date" v-model="newChange.gueltig_ab" class="form-control" required />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label><small>Betrag (€)</small></label>
+            <input type="number" step="0.01" v-model.number="newChange.betrag" class="form-control" required />
+          </div>
+          <div class="form-group" style="width:180px; text-align:right">
+            <button class="save-button" type="submit">+ Änderung</button>
+          </div>
+        </form>
+
+      <div v-if="changesLoading">Lade Änderungen…</div>
+      <div v-else>
+        <div v-if="!changes.length" class="alert alert-info">Keine Änderungen vorhanden. Es gilt der Basisbetrag.</div>
+        <table v-else class="table table-sm">
+          <thead>
+            <tr>
+              <th>Gültig ab</th>
+              <th class="text-end">Betrag</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in changes" :key="row.id">
+              <td>
+                <input type="date" class="form-control form-control-sm" v-model="row._edit.gueltig_ab" />
+              </td>
+              <td class="text-end">
+                <input type="number" step="0.01" class="form-control form-control-sm text-end" v-model.number="row._edit.betrag" />
+              </td>
+              <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                  <button class="edit-button" @click="saveChange(row)">Speichern</button>
+                  <button class="delete-button" @click="deleteChange(row)">Löschen</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="text-end mt-2">
+        <button class="cancel-button" @click="showChangesModal=false">Schließen</button>
+      </div>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -383,6 +473,8 @@ import axios from "axios";
 const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
 const apiUrlAusgabe = `${apiBaseUrl}/feste-ausgaben`;
 const apiUrlEinnahme = `${apiBaseUrl}/feste_einnahmen`;
+const apiUrlAusgabeChangesBase = `${apiBaseUrl}/feste-ausgaben`;
+const apiUrlEinnahmeChangesBase = `${apiBaseUrl}/feste-einnahmen`;
 
 export default {  
   name: "FesteKonfiguration",
@@ -415,20 +507,25 @@ export default {
         kategorie: "",
         zahlungsintervall: "",
         zahlungsmonate: [],
-        startdatum: ""
+        startdatum: "",
+		enddatum: null
       },
       neueEinnahme: {
         name: "",
         betrag: null,
 		kategorie: "",
-        zahlungsmonate: []
+        zahlungsmonate: [],
+		startdatum: new Date().toISOString().split('T')[0],
+        enddatum: null
       },
       editedEinnahme: {
         id: null,
         name: "",
         betrag: null,
 		kategorie: "",
-        zahlungsmonate: []
+        zahlungsmonate: [],
+		startdatum: "",
+       enddatum: null
       },
       kategorienReihenfolge: [
        "Versicherungen",
@@ -440,6 +537,16 @@ export default {
        "Sonstiges",
        "Anteile Andrea"
       ],
+      // --- Änderungen (gemeinsame Modal-UI für Ausgaben & Einnahmen)
+      showChangesModal: false,
+      changesLoading: false,
+      changes: [], // Array von { id, gueltig_ab, betrag }
+      selectedItem: null, // { id, typ: 'ausgabe' | 'einnahme', bezeichnung: string, basisBetrag: number|null }
+      // Eingabe für neue Änderung
+      newChange: {
+        gueltig_ab: new Date().toISOString().split('T')[0],
+        betrag: null,
+      },
     };
   },
   mounted() {
@@ -671,6 +778,11 @@ export default {
     if (typeof this.editedAusgabe.startdatum === 'string' && this.editedAusgabe.startdatum.includes('T')) {
       this.editedAusgabe.startdatum = this.editedAusgabe.startdatum.split('T')[0];
     }
+	
+	if (typeof this.editedAusgabe.enddatum === 'string' && this.editedAusgabe.enddatum.includes('T')) {
+      this.editedAusgabe.enddatum = this.editedAusgabe.enddatum.split('T')[0];
+    }
+
 
     // Falls jährlich → Dropdown vorbelegen
     if (this.editedAusgabe.zahlungsintervall === 'jährlich') {
@@ -718,6 +830,8 @@ export default {
 
         await this.fetchFesteAusgaben();
         this.showEditAusgabeForm = false;
+		console.log("📝 Sende Update:", this.editedAusgabe);
+
       } catch (error) {
         console.error("Fehler beim Aktualisieren der Ausgabe:", error);
         alert("Fehler beim Aktualisieren: " + (error.response?.data?.detail || error.message));
@@ -743,6 +857,12 @@ export default {
     // Formular-Aktionen für Einnahmen
     async addFesteEinnahme() {
       try {
+// Validierung: Enddatum darf nicht vor Startdatum liegen
+        if (this.neueEinnahme.enddatum && this.neueEinnahme.startdatum &&
+           new Date(this.neueEinnahme.enddatum) < new Date(this.neueEinnahme.startdatum)) {
+          alert("Enddatum darf nicht vor dem Startdatum liegen.");
+          return;
+        }
         const response = await axios.post(
           // "http://192.168.178.138:8000/feste_einnahmen/", 
           `${apiUrlEinnahme}/`,
@@ -762,7 +882,9 @@ export default {
           name: "",
           betrag: null,
           kategorie: "",
-          zahlungsmonate: []
+          zahlungsmonate: [],
+          startdatum: new Date().toISOString().split('T')[0],
+          enddatum: null
         };
         
         // Modal schließen
@@ -776,12 +898,23 @@ export default {
     editEinnahme(einnahme) {
       // Tiefe Kopie der Einnahme erstellen
       this.editedEinnahme = JSON.parse(JSON.stringify(einnahme));
+      // Datums-Felder für <input type="date"> normalisieren (yyyy-mm-dd)
+      if (typeof this.editedEinnahme.startdatum === 'string' && this.editedEinnahme.startdatum.includes('T')) {
+        this.editedEinnahme.startdatum = this.editedEinnahme.startdatum.split('T')[0];
+      }
+      if (typeof this.editedEinnahme.enddatum === 'string' && this.editedEinnahme.enddatum?.includes('T')) {
+        this.editedEinnahme.enddatum = this.editedEinnahme.enddatum.split('T')[0];
+      }
       this.showEditEinnahmeForm = true;
     },
     
     async updateFesteEinnahme() {
       try {
-       
+        if (this.editedEinnahme.enddatum && this.editedEinnahme.startdatum &&
+           new Date(this.editedEinnahme.enddatum) < new Date(this.editedEinnahme.startdatum)) {
+          alert("Enddatum darf nicht vor dem Startdatum liegen.");
+          return;
+        }
         await axios.put(
            // `http://192.168.178.138:8000/feste_einnahmen/${this.editedEinnahme.id}`, 
            `${apiUrlEinnahme}/${this.editedEinnahme.id}`,
@@ -812,7 +945,98 @@ export default {
         console.error("Fehler beim Löschen der Einnahme:", error);
         alert("Fehler beim Löschen: " + (error.response?.data?.detail || error.message));
       }
-	}
+	},
+	// Öffnet Änderungs-Modal für eine feste Position
+    openChangesFor(item, typ /* 'ausgabe' | 'einnahme' */) {
+      this.selectedItem = {
+        id: item.id,
+        typ,
+        bezeichnung: (typ === 'ausgabe' ? item.beschreibung : item.name) || `#${item.id}`,
+        basisBetrag: item.betrag ?? null,
+      };
+      this.showChangesModal = true;
+      this.loadChanges();
+    },
+
+
+    // Lädt Änderungen zur aktuellen Auswahl
+    async loadChanges() {
+      if (!this.selectedItem) return;
+      this.changesLoading = true;
+      try {
+        const base = this.selectedItem.typ === 'ausgabe' ? apiUrlAusgabeChangesBase : apiUrlEinnahmeChangesBase;
+        const url = `${base}/${this.selectedItem.id}/aenderungen`;
+        const res = await axios.get(url);
+        // aufsteigend sortieren & Edit-Puffer anlegen
+        const rows = (res.data || []).sort((a,b)=> a.gueltig_ab.localeCompare(b.gueltig_ab))
+          .map(x => ({ ...x, _edit: { gueltig_ab: x.gueltig_ab, betrag: x.betrag } }));
+        this.changes = rows;
+      } catch (e) {
+        console.error('Änderungen laden fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Laden der Änderungen');
+      } finally {
+        this.changesLoading = false;
+      }
+    },
+
+
+    // Neue Änderung anlegen (Regel B: gilt im selben Monat)
+    async createChange() {
+      if (!this.selectedItem) return;
+      try {
+        const base = this.selectedItem.typ === 'ausgabe' ? apiUrlAusgabeChangesBase : apiUrlEinnahmeChangesBase;
+        const url = `${base}/${this.selectedItem.id}/aenderungen`;
+        await axios.post(url, {
+          gueltig_ab: this.newChange.gueltig_ab,
+          betrag: Number(this.newChange.betrag),
+        });
+        // Reset Eingabe + Liste neu laden
+        this.newChange = { gueltig_ab: new Date().toISOString().split('T')[0], betrag: null };
+        await this.loadChanges();
+      } catch (e) {
+        console.error('Anlegen fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Anlegen');
+      }
+    },
+
+
+    // Bestehende Änderung speichern (PATCH)
+    async saveChange(row) {
+      try {
+        const payload = {};
+        if (row._edit.gueltig_ab !== row.gueltig_ab) payload.gueltig_ab = row._edit.gueltig_ab;
+        if (row._edit.betrag !== row.betrag) payload.betrag = Number(row._edit.betrag);
+        if (Object.keys(payload).length === 0) return; // nichts zu tun
+
+
+        const url = (this.selectedItem.typ === 'ausgabe')
+          ? `${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
+          : `${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
+
+
+         await axios.patch(url, payload);
+         await this.loadChanges();
+      } catch (e) {
+        console.error('Speichern fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Speichern');
+      }
+    },
+
+
+    // Änderung löschen
+    async deleteChange(row) {
+      if (!confirm('Änderung wirklich löschen?')) return;
+      try {
+        const url = (this.selectedItem.typ === 'ausgabe')
+        ? `${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
+        : `${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
+        await axios.delete(url);
+        await this.loadChanges();
+      } catch (e) {
+        console.error('Löschen fehlgeschlagen', e);
+        alert(e?.response?.data?.detail || e.message || 'Fehler beim Löschen');
+      }
+    },
   },
   
 watch: {
@@ -894,3 +1118,47 @@ watch: {
  }
 }
 </script>
+<style scoped>
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 10px;
+  max-width: 600px;
+  width: 90%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.save-button, .cancel-button, .edit-button, .delete-button, .add-button {
+  padding: 8px 12px;
+  margin: 4px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.save-button { background-color: #4CAF50; color: white; }
+.cancel-button { background-color: #ccc; }
+.edit-button { background-color: #2196F3; color: white; }
+.delete-button { background-color: #f44336; color: white; }
+.add-button { background-color: #4CAF50; color: white; }
+
+.modal-content h3 {
+  margin-top: 0;
+}
+
+.table-sm input.form-control-sm { height: 32px; padding: 2px 6px; }
+
+</style>

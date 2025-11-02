@@ -234,7 +234,14 @@
             <tbody>
               <tr v-for="ausgabe in ungeplannteAusgaben" :key="ausgabe.id" 
                   :style="{ color: getStatusColor(ausgabe.status) }">
-                <td>{{ ausgabe.beschreibung }}</td>
+                <td class="beschreibung-cell">
+                  <span :title="ausgabe.beschreibung">{{ ausgabe.beschreibung }}</span>
+                  <span 
+                    v-if="ausgabe.kommentar" 
+                    class="kommentar-icon" 
+                    :title="ausgabe.kommentar"
+                    >💬</span>
+                </td>
                 <td>{{ ausgabe.betrag }}€</td>
                 <td>
                   <select v-model="ausgabe.status" @change="updateAusgabeStatus(ausgabe, ausgabe.status)">
@@ -280,7 +287,14 @@
             </thead>
             <tbody>
               <tr v-for="einnahme in ungeplannteEinnahmen" :key="einnahme.id">
-                <td>{{ einnahme.beschreibung }}</td>
+                  <td class="beschreibung-cell">
+                    <span :title="einnahme.beschreibung">{{ einnahme.beschreibung }}</span>
+                    <span 
+                      v-if="einnahme.kommentar" 
+                      class="kommentar-icon" 
+                      :title="einnahme.kommentar"
+                      >💬</span>
+                  </td>
                 <td>{{ einnahme.betrag }}€</td>
                 <td>
                   <button @click="editEinnahme(einnahme)">Bearbeiten</button>
@@ -1109,4 +1123,28 @@ input[type="number"] {
   .kontostand-info p {
     font-size: 13px;
   }
+  .beschreibung-cell {
+  max-width: 200px;            /* normale Breite */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.beschreibung-cell:hover {
+  white-space: normal;          /* klappt bei Hover auf */
+  max-width: 400px;             /* oder auto, falls du ganz frei willst */
+  background: #f8f9fa;          /* leichter Hintergrund, damit es auffällt */
+  position: relative;
+  z-index: 2;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.kommentar-icon {
+  margin-left: 6px;
+  cursor: help;
+  font-size: 0.9em;
+  color: #0d6efd;               /* Bootstrap-Blau */
+}
+
 </style>

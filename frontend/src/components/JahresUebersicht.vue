@@ -1,1031 +1,549 @@
 <template>
-  <div class="jahresuebersicht-container">
-    <h2>Jahresübersicht der festen Ausgaben und Einnahmen</h2>
-    
-    <div v-if="loading" class="loading">
-      Daten werden geladen...
+  <div class="jahresuebersicht container my-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+  <button class="btn btn-outline-secondary btn-sm" @click="jahrMinus">
+    ‹ Vorheriges Jahr
+  </button>
+   <h2 class="fw-semibold text-center flex-grow-1 m-0">Jahresübersicht {{ jahr }}</h2>
+  <button class="btn btn-outline-secondary btn-sm" @click="jahrPlus">
+    Nächstes Jahr ›
+  </button>
+</div>
+
+   <!-- Fehler / Ladezustand -->
+    <div v-if="loading" class="text-center text-muted py-5">
+      <div class="spinner-border text-secondary" role="status"></div>
+      <div>Lade Daten...</div>
     </div>
-    
-    <div v-else-if="error" class="error">
-      Fehler beim Laden der Daten: {{ error }}
-    </div>
-    
-    <div v-else class="jahresuebersicht">
-      <div class="summary-box">
-        <div class="summary-item">
-          <span class="label">Monatliches Ausgaben-Mittel (ohne Anteile Andrea):</span>
-          <span class="value">{{ formatCurrency(monatlicheAusgabenOhneAndrea) }}</span>
+    <div v-else-if="error" class="alert alert-danger">{{ error }}</div>
+
+    <div v-else>
+      <!-- Feste Ausgaben -->
+      <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-light fw-semibold">
+          Feste Ausgaben
         </div>
-        <div class="summary-item">
-          <span class="label">Monatliches Einnahmen-Mittel (ohne Anteile Andrea):</span>
-          <span class="value">{{ formatCurrency(monatlicheEinnahmenOhneAndrea) }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">Jahres-Saldo (ohne Anteile Andrea):</span>
-          <span class="value" :class="jahresSaldoOhneAndrea >= 0 ? 'positive' : 'negative'">
-            {{ formatCurrency(jahresSaldoOhneAndrea) }}
-          </span>
-        </div>
-		<div class="summary-item">
-          <span class="label">Monatlicher Saldo (ohne Anteile Andrea):</span>
-          <span class="value" :class="saldoProMonat >= 0 ? 'positive' : 'negative'">
-            {{ formatCurrency(saldoProMonat) }}
-          </span>
-        </div>
-      </div>
-      
-      <!-- Haupt-Tabelle mit Monaten als Spalten und Posten als Zeilen (ohne Anteile Andrea) -->
-      <div class="table-container">
-        <table class="posten-matrix-tabelle">
-          <thead>
-            <tr>
-              <th>Posten / Monat</th>
-              <th v-for="monat in 12" :key="'monat-'+monat">{{ getMonatName(monat) }}</th>
-              <th>Durchschn. monatl. Kosten</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Gruppiere nach Kategorie und dann nach Posten (ohne Anteile Andrea) -->
-            <template v-for="(kategorieItems, kategorie) in gruppiertNachKategorieOhneAndrea" :key="kategorie">
-              <tr class="kategorie-header">
-                <td>{{ kategorie }}</td>
-                <td colspan="12"></td>
-                <td>{{ formatCurrency(getKategorieDurchschnitt(kategorie)) }}</td>
-              </tr>
-  
-              <tr v-for="posten in kategorieItems" :key="posten.id">
-                <td>{{ posten.beschreibung }}</td>
-                <td v-for="monat in 12" :key="'posten-'+posten.id+'-'+monat">
-                 <!-- {{ isAusgabeAktiv(posten, monat, aktuellesJahr) ? getPostenBetragFuerMonat(posten.id, monat) : '-' }} -->
-                  {{ getPostenBetragFuerMonat(posten.id, monat) }}
-				</td>
-                <td>{{ formatCurrency(getPostenDurchschnitt(posten.id)) }}</td>
-              </tr>
-            </template>
-          </tbody>
-          <tfoot>
-  <!-- Summen pro Monat (ohne Anteile Andrea) -->
-  <tr class="summe-zeile ausgaben">
-    <td><strong>Summe Ausgaben</strong></td>
-    <td v-for="monat in 12" :key="'summe-ausgaben-'+monat">
-      {{ getMonatsSummeOhneAndrea(monat, 'ausgaben') }}
-    </td>
-    <td><strong>{{ formatCurrency(monatlicheAusgabenOhneAndrea) }}</strong></td>
-  </tr>
-  
-  <!-- Neue Zeile für Einnahmen -->
-  <tr class="summe-zeile einnahmen">
-    <td><strong>Summe Einnahmen</strong></td>
-    <td v-for="monat in 12" :key="'summe-einnahmen-'+monat">
-      {{ getMonatsSummeOhneAndrea(monat, 'einnahmen') }}
-    </td>
-    <td><strong>{{ formatCurrency(monatlicheEinnahmenOhneAndrea) }}</strong></td>
-  </tr>
-  
-  <!-- Neue Zeile für monatlichen Saldo -->
-  <tr class="summe-zeile saldo">
-    <td><strong>Monatssaldo (Ein - Aus)</strong></td>
-    <td v-for="monat in 12" :key="'saldo-'+monat" 
-        :class="getMonatsSaldoOhneAndrea(monat) >= 0 ? 'positive' : 'negative'">
-      {{ formatCurrency(getMonatsSaldoOhneAndrea(monat)) }}
-    </td>
-    <td :class="saldoProMonat >= 0 ? 'positive' : 'negative'">
-      <strong>{{ formatCurrency(saldoProMonat) }}</strong>
-    </td>
-  </tr>
-  
-  <!-- Virtueller Kontostand (kumulativ) -->
-  <tr class="virtual-balance">
-    <td><strong>Virtueller Kontostand (kumulativ)</strong></td>
-    <td v-for="monat in 12" :key="'kontostand-'+monat" 
-        :class="getVirtuellerKontostandOhneAndrea(monat) >= 0 ? 'positive' : 'negative'">
-      {{ formatCurrency(getVirtuellerKontostandOhneAndrea(monat)) }}
-    </td>
-    <td></td>
-  </tr>
-  
-  <!-- Delta zum Ausgaben-Mittel (monatlich) -->
-  <tr class="delta-mittel">
-    <td><strong>Delta zum Ausgaben-Mittel</strong></td>
-    <td v-for="monat in 12" :key="'delta-'+monat" 
-        :class="getDeltaZumMittelOhneAndrea(monat) <= 0 ? 'positive' : 'negative'"
-        class="tooltip" 
-        :data-tooltip="getDeltaZumMittelOhneAndrea(monat) <= 0 ? 'Weniger ausgegeben' : 'Mehr ausgegeben'">
-      {{ formatCurrency(getDeltaZumMittelOhneAndrea(monat)) }}
-    </td>
-    <td></td>
-  </tr>
-  
-  <!-- Kontostand Monatsende Soll (früher Kumulativ Delta Ausgaben-Mittel) -->
-  <tr class="kontostand-soll">
-    <td><strong>Kontostand Monatsende Soll</strong></td>
-    <td v-for="monat in 12" :key="'kontostand-soll-'+monat" 
-        :class="getKontostandMonatsendeSoll(monat) >= 0 ? 'positive' : 'negative'"
-        class="tooltip" 
-        :data-tooltip="'Soll-Kontostand basierend auf Ausgaben-Durchschnitt'">
-      {{ formatCurrency(getKontostandMonatsendeSoll(monat)) }}
-    </td>
-    <td></td>
-  </tr>
-</tfoot>
-        </table>
-      </div>
-      
-      <!-- Separate Tabelle für Anteile Andrea -->
-      <div class="anteile-andrea-section">
-        <h3>Anteile Andrea</h3>
-        <div class="summary-box">
-          <div class="summary-item">
-            <span class="label">Monatliches Ausgaben-Mittel:</span>
-            <span class="value">{{ formatCurrency(monatlicheAusgabenAndrea) }}</span>
-          </div>
-          <div class="summary-item">
-            <span class="label">Monatliches Einnahmen-Mittel:</span>
-            <span class="value">{{ formatCurrency(monatlicheEinnahmenAndrea) }}</span>
-          </div>
-          <div class="summary-item">
-            <span class="label">Jahres-Saldo:</span>
-            <span class="value" :class="jahresSaldoAndrea >= 0 ? 'positive' : 'negative'">
-              {{ formatCurrency(jahresSaldoAndrea) }}
-            </span>
-          </div>
-        </div>
-        
-        <div class="table-container">
-          <table class="posten-matrix-tabelle">
-            <thead>
-              <tr>
-                <th>Posten / Monat</th>
-                <th v-for="monat in 12" :key="'andrea-monat-'+monat">{{ getMonatName(monat) }}</th>
-                <th>Durchschn. monatl. Kosten</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="posten in gruppiertNachKategorie['Anteile Andrea'] || []" :key="'andrea-'+posten.id">
-                <td>{{ posten.beschreibung }}</td>
-                <td v-for="monat in 12" :key="'andrea-posten-'+posten.id+'-'+monat">
-                  {{ getPostenBetragFuerMonat(posten.id, monat) }}
-                </td>
-                <td>{{ formatCurrency(getPostenDurchschnitt(posten.id)) }}</td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr class="summe-zeile">
-                <td><strong>Summe Anteile Andrea</strong></td>
-                <td v-for="monat in 12" :key="'andrea-summe-'+monat">
-                  {{ getMonatsSummeAndrea(monat) }}
-                </td>
-				<td><strong>{{ formatCurrency(monatlicheAusgabenAndrea) }}</strong></td>
-              </tr>
-              <tr class="summe-zeile">
-				<td><strong>Summe Einnahmen Andrea</strong></td>
-				<td v-for="monat in 12" :key="'andrea-einnahmen-summe-'+monat">
-					{{ getMonatsSummeAndreaEinnahmen(monat) }}
-				</td>
-				<td><strong>{{ formatCurrency(monatlicheEinnahmenAndrea) }}</strong></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-      
-      <!-- Quartals- und Halbjahresübersicht (ohne Anteile Andrea) -->
-      <div class="periode-uebersicht">
-        <h3>Periodenübersicht (ohne Anteile Andrea)</h3>
-        
-        <div class="perioden-container">
-          <div class="periode-box">
-            <h4>Quartale</h4>
-            <table class="periode-tabelle">
-              <thead>
+        <div class="card-body p-0">
+          <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+            <table class="table table-sm table-bordered m-0">
+              <thead class="table-light sticky-top">
                 <tr>
-                  <th>Quartal</th>
-                  <th>Ausgaben</th>
-                  <th>Einnahmen</th>
-                  <th>Saldo</th>
-                  <th>Monatliches Mittel</th>
+                  <th>Kategorie / Posten</th>
+                  <th v-for="m in headerMonate" :key="m" class="text-end">{{ m }}</th>
+                  <th class="text-end">Summe</th>
+                  <th class="text-end">Ø</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="i in 4" :key="'q-'+i">
-                  <td>Q{{ i }}</td>
-                  <td>{{ formatCurrency(getQuartalsSummeOhneAndrea(i, 'ausgaben')) }}</td>
-                  <td>{{ formatCurrency(getQuartalsSummeOhneAndrea(i, 'einnahmen')) }}</td>
-                  <td :class="getQuartalsSaldoOhneAndrea(i) >= 0 ? 'positive' : 'negative'">
-                    {{ formatCurrency(getQuartalsSaldoOhneAndrea(i)) }}
-                  </td>
-                  <td>{{ formatCurrency(getQuartalsMittelOhneAndrea(i, 'ausgaben')) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          
-          <div class="periode-box">
-            <h4>Halbjahre</h4>
-            <table class="periode-tabelle">
-              <thead>
-                <tr>
-                  <th>Halbjahr</th>
-                  <th>Ausgaben</th>
-                  <th>Einnahmen</th>
-                  <th>Saldo</th>
-                  <th>Monatliches Mittel</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="i in 2" :key="'h-'+i">
-                  <td>H{{ i }}</td>
-                  <td>{{ formatCurrency(getHalbjahrSummeOhneAndrea(i, 'ausgaben')) }}</td>
-                  <td>{{ formatCurrency(getHalbjahrSummeOhneAndrea(i, 'einnahmen')) }}</td>
-                  <td :class="getHalbjahrSaldoOhneAndrea(i) >= 0 ? 'positive' : 'negative'">
-                    {{ formatCurrency(getHalbjahrSaldoOhneAndrea(i)) }}
-                  </td>
-                  <td>{{ formatCurrency(getHalbjahrMittelOhneAndrea(i, 'ausgaben')) }}</td>
-                </tr>
+                <template v-for="(posten, kategorie) in aggregierteAusgaben" :key="kategorie">
+                  <tr class="table-secondary fw-semibold">
+                    <td :colspan="headerMonate.length + 2">{{ kategorie }}</td>
+                  </tr>
+                 <tr
+                    v-for="([name, werte]) in Object.entries(posten).filter(([k]) => !k.startsWith('_'))"
+                     :key="name"
+                    >
+                    <td class="ps-4">{{ name }}</td>
+                    <td
+                      v-for="(betrag, idx) in werte.monate"
+                      :key="idx"
+                      class="text-end"
+                    >
+                      {{ formatCurrency(betrag) }}
+                    </td>
+                    <td class="text-end fw-semibold">{{ formatCurrency(werte.summe) }}</td>
+                    <td class="text-end text-muted">{{ formatCurrency(werte.durchschnitt) }}</td>
+                  </tr>
+                  <tr class="table-light">
+                    <td class="ps-4 fst-italic">Summe {{ kategorie }}</td>
+                    <td
+                      v-for="(v, idx) in posten._kategorieSummen"
+                      :key="idx"
+                      class="text-end"
+                    >
+                      {{ formatCurrency(v) }}
+                    </td>
+                    <td class="text-end fw-semibold">
+                      {{ formatCurrency(posten._kategorieGesamt) }}
+                    </td>
+                     <td class="text-end text-muted">
+                       {{ formatCurrency(posten._kategorieGesamt / 12) }}
+                     </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
         </div>
       </div>
+
+      <!-- Feste Einnahmen -->
+      <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-light fw-semibold">
+          Feste Einnahmen
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+            <table class="table table-sm table-bordered m-0">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th>Kategorie / Quelle</th>
+                  <th v-for="m in headerMonate" :key="m" class="text-end">{{ m }}</th>
+                  <th class="text-end">Summe</th>
+                  <th class="text-end">Ø</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="(posten, kategorie) in aggregierteEinnahmen" :key="kategorie">
+                  <tr class="table-secondary fw-semibold">
+                    <td :colspan="headerMonate.length + 2">{{ kategorie }}</td>
+                  </tr>
+                  <tr
+                     v-for="([name, werte]) in Object.entries(posten).filter(([k]) => !k.startsWith('_'))"
+                     :key="name"
+                   >
+                    <td class="ps-4">{{ name }}</td>
+                    <td
+                      v-for="(betrag, idx) in werte.monate"
+                      :key="idx"
+                      class="text-end"
+                    >
+                      {{ formatCurrency(betrag) }}
+                    </td>
+                    <td class="text-end fw-semibold">{{ formatCurrency(werte.summe) }}</td>
+                    <td class="text-end text-muted">{{ formatCurrency(werte.durchschnitt) }}</td>
+                  </tr>
+                  <tr class="table-light">
+                    <td class="ps-4 fst-italic">Summe {{ kategorie }}</td>
+                    <td
+                      v-for="(v, idx) in posten._kategorieSummen"
+                      :key="idx"
+                      class="text-end"
+                    >
+                      {{ formatCurrency(v) }}
+                    </td>
+                    <td class="text-end fw-semibold">
+                      {{ formatCurrency(posten._kategorieGesamt) }}
+                    </td>
+                    <td></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+<!-- Jahreskennzahlen -->
+<div class="card shadow-sm mt-4">
+  <div class="card-header bg-light">
+    <h5 class="m-0">📊 Jahreskennzahlen</h5>
+  </div>
+  <div class="card-body table-responsive">
+    <table class="table table-sm align-middle text-end">
+      <thead>
+        <tr>
+          <th class="text-start">Kennzahl</th>
+          <th v-for="(m, idx) in headerMonate" :key="idx">{{ m }}</th>
+          <th>Summe</th>
+          <th>Ø</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Ausgaben -->
+        <tr class="text-danger">
+          <td class="text-start">Ausgaben</td>
+          <td v-for="m in monate" :key="'a'+m.monat">
+            {{ formatCurrency(m.ausgaben) }}
+          </td>
+          <td>{{ formatCurrency(sumAusgaben) }}</td>
+          <td>{{ formatCurrency(avgAusgaben) }}</td>
+        </tr>
+
+        <!-- Einnahmen -->
+        <tr class="text-success">
+          <td class="text-start">Einnahmen</td>
+          <td v-for="m in monate" :key="'e'+m.monat">
+            {{ formatCurrency(m.einnahmen) }}
+          </td>
+          <td>{{ formatCurrency(sumEinnahmen) }}</td>
+          <td>{{ formatCurrency(avgEinnahmen) }}</td>
+        </tr>
+
+        <!-- Saldo -->
+        <tr class="table-light fw-semibold">
+          <td class="text-start">Saldo</td>
+          <td v-for="m in monate" :key="'s'+m.monat">
+            {{ formatCurrency(m.saldo) }}
+          </td>
+          <td>{{ formatCurrency(sumSaldo) }}</td>
+          <td>{{ formatCurrency(avgSaldo) }}</td>
+        </tr>
+
+        <!-- Virtueller Kontostand -->
+        <tr>
+          <td class="text-start">Virtueller Kontostand</td>
+          <td v-for="m in monate" :key="'vk'+m.monat">
+            {{ formatCurrency(m.virtueller_kontostand) }}
+          </td>
+        </tr>
+
+        <!-- Soll-Kontostand -->
+        <tr>
+          <td class="text-start">Soll-Kontostand</td>
+          <td v-for="m in monate" :key="'sk'+m.monat">
+            {{ formatCurrency(m.soll_kontostand) }}
+          </td>
+        </tr>
+
+        <!-- Delta zum Mittel -->
+        <tr>
+          <td class="text-start">Δ zum Mittel</td>
+          <td v-for="m in monate" :key="'dm'+m.monat">
+            {{ formatCurrency(m.delta_mittel) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
     </div>
   </div>
 </template>
 
+
+
 <script>
 import axios from 'axios';
-//import { isAusgabeAktiv } from '@/utils/finanzHelpers';
+
 const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
 const jahresUebersichtUrl = `${apiBaseUrl}/jahresuebersicht`;
-const KATEGORIE_AUSGABEN_ANDREA = 'Anteile Andrea'; // Für Ausgaben
-const KATEGORIE_EINNAHMEN_ANDREA = 'Andrea'; // Für Einnahmen
 
 export default {
   name: 'JahresUebersicht',
-  props: {
+  /* props: {
     jahr: {
       type: Number,
       default() {
         return new Date().getFullYear();
       }
     }
-  },
+  }, */
   data() {
     return {
+      jahr: new Date().getFullYear(), // Lokale Jahresvariable
       loading: true,
       error: null,
+      // Neue Struktur: Backend liefert ein fertiges Array mit allen Kennzahlen
+      monate: [], // [{monat, ausgaben, einnahmen, saldo, virtueller_kontostand, delta_mittel, soll_kontostand}]
+      mittelAusgabenOhneAndrea: null, // kommt jetzt vom Backend, nicht aus manueller Berechnung
+
+      // ❌ Alt: war nötig für clientseitige Aggregationen, jetzt überflüssig
       jahresUebersicht: null,
-      expandedMonths: [],
-      allePosten: [], // Hier speichern wir alle Posten für die Matrix-Ansicht
-      andreaDaten: {
-        monatsAusgaben: Array(12).fill(0),
-        monatsEinnahmen: Array(12).fill(0)
-      }
+      // expandedMonths: [],
+      // allePosten: [],
+      // andreaDaten: { monatsAusgaben: Array(12).fill(0), monatsEinnahmen: Array(12).fill(0) }
     };
   },
-  computed: {
-	// Daten ohne Andrea-Anteile - KORRIGIERT
-    monatlicheAusgabenOhneAndrea() {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      // Direkte Berechnung der Ausgaben ohne Andrea-Anteile
-      let summeOhneAndrea = 0;
-      this.jahresUebersicht.monats_daten.forEach(monat => {
-        monat.ausgaben.forEach(ausgabe => {
-          if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-            summeOhneAndrea += ausgabe.betrag;
-          }
-        });
-      });
-      return summeOhneAndrea / 12; // Monatlicher Durchschnitt
-    },
-	monatlicheEinnahmenOhneAndrea() {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      
-      // Direkte Berechnung der Einnahmen ohne Andrea
-      let summeOhneAndrea = 0;
-      this.jahresUebersicht.monats_daten.forEach(monat => {
-        if (monat.einnahmen) {
-          monat.einnahmen.forEach(einnahme => {
-            if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
-              summeOhneAndrea += einnahme.betrag;
-            }
-          });
-        }
-      });
-      return summeOhneAndrea / 12; // Monatlicher Durchschnitt
-    },
-    jahresSaldoOhneAndrea() {
-      return (this.monatlicheEinnahmenOhneAndrea * 12) - (this.monatlicheAusgabenOhneAndrea * 12);
-    },
-    saldoProMonat() {
-      return this.jahresSaldoOhneAndrea / 12;
-    },
-   // Daten nur für Andrea-Anteile
-    monatlicheAusgabenAndrea() {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      
-      // Direkte Berechnung aus Monatsdaten
-      let summeAndrea = 0;
-      this.jahresUebersicht.monats_daten.forEach(monat => {
-        monat.ausgaben.forEach(ausgabe => {
-          if (ausgabe.kategorie === KATEGORIE_AUSGABEN_ANDREA) {
-            summeAndrea += ausgabe.betrag;
-          }
-        });
-      });
-      
-      return summeAndrea / 12; // Monatlicher Durchschnitt
-    },
-    monatlicheEinnahmenAndrea() {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      
-      let summe = 0;
-      this.jahresUebersicht.monats_daten.forEach(monat => {
-        if (monat.einnahmen) {
-          monat.einnahmen.forEach(einnahme => {
-            if (einnahme.kategorie === KATEGORIE_EINNAHMEN_ANDREA) {
-              summe += einnahme.betrag;
-            }
-          });
-        }
-      });
-      
-      return summe / 12; // Monatlicher Durchschnitt
-    },
-    jahresSaldoAndrea() {
-      return (this.monatlicheEinnahmenAndrea * 12) - (this.monatlicheAusgabenAndrea * 12);
-    },
-    // Gruppieren der Posten nach Kategorie für die Tabelle (ohne Andrea)
-    gruppiertNachKategorie() {
-      const gruppen = {};
-      if (!this.allePosten || this.allePosten.length === 0) return gruppen;
-      
-      this.allePosten.forEach(posten => {
-        if (!gruppen[posten.kategorie]) {
-          gruppen[posten.kategorie] = [];
-        }
-        gruppen[posten.kategorie].push(posten);
-      });
-      return gruppen;
-    },
-    // Gruppieren der Posten nach Kategorie für die Tabelle (ohne Andrea)
-    gruppiertNachKategorieOhneAndrea() {
-      const gruppen = {};
-      if (!this.allePosten || this.allePosten.length === 0) return gruppen;
-  
-      // Definiere Reihenfolge der Kategorien
-      const kategorienReihenfolge = [
-        'Versicherungen', 
-        'Kredite', 
-        'Haus', 
-        'Kinder', 
-        'Hund', 
-        'Sonstiges'
-      ];
-  
-      // Gruppiere Posten nach Kategorie
-      this.allePosten.forEach(posten => {
-        if (posten.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-          if (!gruppen[posten.kategorie]) {
-            gruppen[posten.kategorie] = [];
-          }
-          gruppen[posten.kategorie].push(posten);
-        }
-      });
-  
-      // Sortierte Kategorien erstellen
-      const sortiertGruppen = {};
-      kategorienReihenfolge.forEach(kategorie => {
-        if (gruppen[kategorie]) {
-          sortiertGruppen[kategorie] = gruppen[kategorie];
-        }
-      });
-  
-      // Kategorien, die nicht in der Reihenfolge definiert sind, am Ende anfügen
-      Object.keys(gruppen).forEach(kategorie => {
-        if (!kategorienReihenfolge.includes(kategorie)) {
-           sortiertGruppen[kategorie] = gruppen[kategorie];
-        }
-       });
-  
-      return sortiertGruppen;
-    }
-  },
   created() {
-    this.loadJahresUebersicht();
+    this.loadJahresdaten();
   },
   watch: {
     jahr() {
-      // Neu laden wenn sich das Jahr ändert
-      this.loadJahresUebersicht();
+      this.loadJahresdaten();
     }
   },
+  computed: {
+    headerMonate() {
+      const names = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+      return names;
+    },
+    // Summen für Fuß-/Kopfzeilen
+    sumAusgaben()  { return this.monate.reduce((s,m)=>s+(m.ausgaben||0), 0); },
+    sumEinnahmen() { return this.monate.reduce((s,m)=>s+(m.einnahmen||0), 0); },
+    sumSaldo()     { return this.monate.reduce((s,m)=>s+(m.saldo||0), 0); },
+	avgAusgaben() { return this.sumAusgaben / 12; },
+	avgEinnahmen() { return this.sumEinnahmen / 12; },
+	avgSaldo()     { return this.sumSaldo / 12; },
+
+    // ❌ Alt: diese Computed-Properties haben Summen ohne Andrea clientseitig berechnet.
+    // Die Logik steckt jetzt im Backend → sauberere Quelle, daher auskommentiert.
+    /*
+    monatlicheAusgabenOhneAndrea() { ... },
+    monatlicheEinnahmenOhneAndrea() { ... },
+    jahresSaldoOhneAndrea() { ... },
+    saldoProMonat() { ... },
+    monatlicheAusgabenAndrea() { ... },
+    monatlicheEinnahmenAndrea() { ... },
+    jahresSaldoAndrea() { ... },
+    gruppiertNachKategorie() { ... },
+    gruppiertNachKategorieOhneAndrea() { ... },
+    */
+      // Aggregiert die festen Ausgaben aus monats_daten
+  aggregierteAusgaben() {
+    if (!this.jahresUebersicht?.monats_daten) return {};
+
+    const daten = this.jahresUebersicht.monats_daten;
+    const matrix = {};
+
+    daten.forEach((monatObj) => {
+      const monatIndex = monatObj.monat - 1;
+
+      monatObj.ausgaben.forEach((a) => {
+        // Kategorie erzeugen
+        if (!matrix[a.kategorie]) matrix[a.kategorie] = {};
+        const kat = matrix[a.kategorie];
+
+        // Beschreibung erzeugen
+        if (!kat[a.beschreibung]) {
+          kat[a.beschreibung] = {
+            monate: Array(12).fill(0),
+            summe: 0,
+            durchschnitt: 0,
+          };
+        }
+
+        // Wert eintragen
+        kat[a.beschreibung].monate[monatIndex] = a.betrag;
+      });
+    });
+
+    // Summen pro Posten + pro Kategorie berechnen
+    for (const [, posten] of Object.entries(matrix)) {
+      const kategorieSummen = Array(12).fill(0);
+      let kategorieGesamt = 0;
+      let rowCount = 0;
+
+      for (const [beschr, werte] of Object.entries(posten)) {
+        if (beschr === '_rowspan') continue;
+
+        // Summen für diesen Posten
+        werte.summe = werte.monate.reduce((s, v) => s + v, 0);
+        werte.durchschnitt = werte.summe / 12;
+
+        // In die Kategorie-Summen einrechnen
+        werte.monate.forEach((v, i) => (kategorieSummen[i] += v));
+        kategorieGesamt += werte.summe;
+        rowCount++;
+      }
+
+      posten._kategorieSummen = kategorieSummen;
+      posten._kategorieGesamt = kategorieGesamt;
+      posten._rowspan = rowCount + 2; // +2 = Header + Zwischensumme
+    }
+
+    return matrix;
+  },
+
+  // Aggregiert die festen Einnahmen aus monats_daten
+  aggregierteEinnahmen() {
+    if (!this.jahresUebersicht?.monats_daten) return {};
+
+    const daten = this.jahresUebersicht.monats_daten;
+    const matrix = {};
+
+    daten.forEach((monatObj) => {
+      const monatIndex = monatObj.monat - 1;
+      if (!monatObj.einnahmen) return;
+
+      monatObj.einnahmen.forEach((e) => {
+        // Kategorie erzeugen
+        if (!matrix[e.kategorie]) matrix[e.kategorie] = {};
+        const kat = matrix[e.kategorie];
+
+        // Name/Beschreibung (je nach Feld in deiner DB)
+        const name = e.beschreibung || e.name || 'Unbekannt';
+        if (!kat[name]) {
+          kat[name] = {
+            monate: Array(12).fill(0),
+            summe: 0,
+            durchschnitt: 0,
+          };
+        }
+
+        // Wert eintragen
+        kat[name].monate[monatIndex] = e.betrag;
+      });
+    });
+
+    // Summen pro Posten + Kategorie berechnen
+    for (const [, posten] of Object.entries(matrix)) {
+      const kategorieSummen = Array(12).fill(0);
+      let kategorieGesamt = 0;
+      let rowCount = 0;
+
+      for (const [name, werte] of Object.entries(posten)) {
+        if (name === '_rowspan') continue;
+
+        werte.summe = werte.monate.reduce((s, v) => s + v, 0);
+        werte.durchschnitt = werte.summe / 12;
+
+        werte.monate.forEach((v, i) => (kategorieSummen[i] += v));
+        kategorieGesamt += werte.summe;
+        rowCount++;
+      }
+
+      posten._kategorieSummen = kategorieSummen;
+      posten._kategorieGesamt = kategorieGesamt;
+      posten._rowspan = rowCount + 2;
+    }
+
+    return matrix;
+  },
+
+  // Gesamtsummen über alle Kategorien
+  gesamtSummenMonat() {
+    const summen = Array(12).fill(0);
+    for (const kat of Object.values(this.aggregierteAusgaben)) {
+      kat._kategorieSummen.forEach((v, i) => (summen[i] += v));
+    }
+    return summen;
+  },
+
+  gesamtSummeJahr() {
+    return this.gesamtSummenMonat.reduce((s, v) => s + v, 0);
+  },
+
+  },
   methods: {
-  
-    async loadJahresUebersicht() {
-      this.loading = true;
+    eur(n) {
+      const v = Number(n ?? 0);
+      return v.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
+    },
+
+    normMonth(m, idx) {
+      // Fallback sichert, dass alle Felder existieren
+      return {
+        monat: m.monat ?? (idx+1),
+        ausgaben: Number(m.ausgaben ?? 0),
+        einnahmen: Number(m.einnahmen ?? 0),
+        saldo: Number(m.saldo ?? (Number(m.einnahmen ?? 0) - Number(m.ausgaben ?? 0))),
+        virtueller_kontostand: Number(m.virtueller_kontostand ?? 0),
+        delta_mittel: Number(m.delta_mittel ?? 0),
+        soll_kontostand: Number(m.soll_kontostand ?? 0),
+      };
+    },
+
+    ensureTwelve(monatsArray) {
+      const byMon = new Map(monatsArray.map(m => [m.monat, m]));
+      const out = [];
+      for (let i=1; i<=12; i++) out.push(byMon.get(i) || this.normMonth({ monat: i }, i-1));
+      return out;
+    },
+
+    async loadJahresdaten() {
+      this.loading = true; this.error = null;
+     console.log("Lade Jahr:", this.jahr);
+
       try {
-        const response = await axios.get(`${jahresUebersichtUrl}/${this.jahr}`);
-        this.jahresUebersicht = response.data;
-        
-        // Alle einzigartigen Posten aus den Monatsdaten extrahieren
-        this.allePosten = this.extrahiereAllePosten();
-        
-        // Ausgaben und Einnahmen der Anteile Andrea pro Monat berechnen
-        this.berechneMontlicheWerteAndrea();
-      } catch (err) {
-        console.error('Fehler beim Laden der Jahresübersicht:', err);
-        this.error = err.message || 'Unbekannter Fehler';
+        const { data } = await axios.get(`${jahresUebersichtUrl}/${this.jahr}`);
+        this.mittelAusgabenOhneAndrea = Number(data.monatliches_mittel_ausgaben_ohne_andrea ?? 0);
+        this.monate = this.ensureTwelve((data.monate || []).map(this.normMonth));
+
+        // 👇 Das ist wichtig für die neue Tabelle:
+        this.jahresUebersicht = data;
+      } catch (e) {
+        console.error('Fehler beim Laden der Jahresübersicht:', e);
+        this.error = e.message || 'Unbekannter Fehler';
       } finally {
         this.loading = false;
       }
     },
-	getKategorieDurchschnitt(kategorie) {
-      if (!this.allePosten || this.allePosten.length === 0) return 0;
-  
-      let summe = 0;
-      this.allePosten.forEach(posten => {
-        if (posten.kategorie === kategorie) {
-          summe += this.getPostenDurchschnitt(posten.id);
-        }
-      });
-  
-      return summe;
-    },
-     // Berechnet die Ausgaben und Einnahmen der Anteile Andrea pro Monat
-    berechneMontlicheWerteAndrea() {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return;
-
-      // Zurücksetzen der Werte
-      this.andreaDaten.monatsAusgaben = Array(12).fill(0);
-      this.andreaDaten.monatsEinnahmen = Array(12).fill(0);
-  
-      this.jahresUebersicht.monats_daten.forEach(monat => {
-        const monatIndex = monat.monat - 1; // 0-basierter Index
     
-        // Alle Ausgaben der Kategorie "Anteile Andrea" für diesen Monat summieren
-        monat.ausgaben.forEach(ausgabe => {
-         if (ausgabe.kategorie === KATEGORIE_AUSGABEN_ANDREA) {
-            this.andreaDaten.monatsAusgaben[monatIndex] += ausgabe.betrag;
-        }
-        });
-    
-        // Einnahmen in der Kategorie "Anteile Andrea" summieren
-        if (monat.einnahmen) {
-          monat.einnahmen.forEach(einnahme => {
-          if (einnahme.kategorie === KATEGORIE_EINNAHMEN_ANDREA) {
-            this.andreaDaten.monatsEinnahmen[monatIndex] += einnahme.betrag;
-            }
-          });
-        }
-      });
-    },
-    // Extrahiert alle einzigartigen Posten aus allen Monaten
-    extrahiereAllePosten() {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return [];
-      
-      const postenMap = new Map();
-      
-      this.jahresUebersicht.monats_daten.forEach(monat => {
-        monat.ausgaben.forEach(ausgabe => {
-          if (!postenMap.has(ausgabe.id)) {
-            postenMap.set(ausgabe.id, {
-              id: ausgabe.id,
-              beschreibung: ausgabe.beschreibung,
-              kategorie: ausgabe.kategorie,
-              monatsBetraege: {}
-            });
-          }
-          
-          // Betrag für den jeweiligen Monat speichern
-          postenMap.get(ausgabe.id).monatsBetraege[monat.monat] = ausgabe.betrag;
-        });
-      });
-      
-      return Array.from(postenMap.values());
-    },
-    // Formatiert einen Betrag als Währung
-    formatCurrency(value) {
-      if (value === 0) return '';
-      return new Intl.NumberFormat('de-DE', { 
-        style: 'currency', 
-        currency: 'EUR',
-		minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-      }).format(value);
-    },
-    // Holt den deutschen Monatsnamen
-    getMonatName(monatNummer) {
+	getMonatName(monatNummer) {
       const monate = [
         'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
         'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
       ];
-      return monate[monatNummer - 1];
-    },
-    // Zeigt/versteckt die Details eines Monats
-    toggleMonthDetails(monat) {
-      if (this.expandedMonths.includes(monat)) {
-        this.expandedMonths = this.expandedMonths.filter(m => m !== monat);
-      } else {
-        this.expandedMonths.push(monat);
-      }
-    },
-    // Gibt den Betrag eines Postens für einen bestimmten Monat zurück
-    getPostenBetragFuerMonat(postenId, monat) {
-      const posten = this.allePosten.find(p => p.id === postenId);
-      if (!posten || !posten.monatsBetraege[monat] || posten.monatsBetraege[monat] === 0) return '';
-      return this.formatCurrency(posten.monatsBetraege[monat]);
-    },
-    // Berechnet den Durchschnitt für einen Posten über alle Monate
-    getPostenDurchschnitt(postenId) {
-      const posten = this.allePosten.find(p => p.id === postenId);
-      if (!posten) return 0;
-      
-      const betraege = Object.values(posten.monatsBetraege);
-      if (betraege.length === 0) return 0;
-      
-      const summe = betraege.reduce((sum, betrag) => sum + betrag, 0);
-      return summe / 12; // Teilen durch 12 Monate
-    },
-    // Berechnet die Summe aller Ausgaben für einen Monat
-    getMonatsSumme(monat, typ) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return '';
-      
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return '';
-      
-      const summe = typ === 'ausgaben' ? monatsDaten.ausgaben_summe : monatsDaten.einnahmen_summe;
-      if (summe === 0) return '';
-      return this.formatCurrency(summe);
-    },
-    // Berechnet die Summe aller Ausgaben für einen Monat (ohne Anteile Andrea)
- // Aktualisierte Methode zur Berechnung der Monats-Ausgaben ohne Andrea
-    getMonatsSummeOhneAndrea(monat, typ) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return '';
-      
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return '';
-      
-      let summe = 0;
-      if (typ === 'ausgaben') {
-        // Summe aller Ausgaben außer der Kategorie "Anteile Andrea"
-        summe = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-          if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-            return sum + ausgabe.betrag;
-          }
-          return sum;
-        }, 0);
-      } else { // einnahmen
-        // Summe aller Einnahmen außer der Kategorie "Andrea"
-        if (monatsDaten.einnahmen) {
-          summe = monatsDaten.einnahmen.reduce((sum, einnahme) => {
-            if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
-              return sum + einnahme.betrag;
-            }
-            return sum;
-          }, 0);
-        }
-      }
-      
-      if (summe === 0) return '';
-      return this.formatCurrency(summe);
-    },
-     // Methode für Ausgaben von Andrea
-    getMonatsSummeAndrea(monat) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return '';
-  
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return '';
-  
-      const ausgabenSumme = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-        if (ausgabe.kategorie === KATEGORIE_AUSGABEN_ANDREA) {
-          return sum + ausgabe.betrag;
-        }
-        return sum;
-      }, 0);
-  
-      if (ausgabenSumme === 0) return '';
-      return this.formatCurrency(ausgabenSumme);
-    },
-	// Methode für Einnahmen von Andrea
-    getMonatsSummeAndreaEinnahmen(monat) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return '';
-  
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten || !monatsDaten.einnahmen) return '';
-  
-      const summe = monatsDaten.einnahmen.reduce((sum, einnahme) => {
-        if (einnahme.kategorie === KATEGORIE_EINNAHMEN_ANDREA) {
-          return sum + einnahme.betrag;
-        }
-        return sum;
-      }, 0);
-  
-      if (summe === 0) return '';
-      return this.formatCurrency(summe);
-    },
-    // Aktualisierte Methode für virtuellen Kontostand ohne Andrea
-    getVirtuellerKontostandOhneAndrea(monat) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-  
-      let kumulativerSaldo = 0;
-  
-      // Berechne kumulativen Saldo bis zu diesem Monat
-      for (let m = 1; m <= monat; m++) {
-        const monatsDaten = this.jahresUebersicht.monats_daten.find(md => md.monat === m);
-        if (monatsDaten) {
-          // Ausgaben ohne Andrea für diesen Monat
-          const ausgabenOhneAndrea = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-            if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-              return sum + ausgabe.betrag;
-            }
-            return sum;
-          }, 0);
-      
-          // Einnahmen ohne Andrea für diesen Monat
-          let einnahmenOhneAndrea = 0;
-          if (monatsDaten.einnahmen) {
-            einnahmenOhneAndrea = monatsDaten.einnahmen.reduce((sum, einnahme) => {
-              if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
-                return sum + einnahme.betrag;
-              }
-              return sum;
-            }, 0);
-          }
-      
-          // Saldo für diesen Monat = Einnahmen - Ausgaben
-          const monatsSaldo = einnahmenOhneAndrea - ausgabenOhneAndrea;
-          kumulativerSaldo += monatsSaldo;
-        }
-      }
-  
-      return kumulativerSaldo;
-    },
-    // Aktualisierte Methode für Delta zum Mittel ohne Andrea
-    getDeltaZumMittelOhneAndrea(monat) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return 0;
-      
-      // Ausgaben Andrea in diesem Monat
-      const ausgabenOhneAndrea = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-        if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-          return sum + ausgabe.betrag;
-        }
-        return sum;
-      }, 0);
-      
-      
-      // Delta = tatsächliche Ausgaben - durchschnittliche Ausgaben
-      // Negativ = weniger ausgegeben als im Schnitt (gut)
-      // Positiv = mehr ausgegeben als im Schnitt (schlecht)
-      return ausgabenOhneAndrea - this.monatlicheAusgabenOhneAndrea;
-    },
- 
-    // Ähnliche Aktualisierungen sind in allen anderen Methoden nötig, 
-    // die mit Andrea-Kategorien arbeiten
-    getQuartalsSummeOhneAndrea(quartal, typ) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      
-      const startMonat = (quartal - 1) * 3 + 1;
-      const endMonat = startMonat + 2;
-      
-      let summe = 0;
-      for (let monat = startMonat; monat <= endMonat; monat++) {
-        const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-        if (monatsDaten) {
-          if (typ === 'ausgaben') {
-            summe += monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-              if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-                return sum + ausgabe.betrag;
-              }
-              return sum;
-            }, 0);
-          } else { // einnahmen
-            if (monatsDaten.einnahmen) {
-              summe += monatsDaten.einnahmen.reduce((sum, einnahme) => {
-                if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
-                  return sum + einnahme.betrag;
-                }
-                return sum;
-              }, 0);
-            }
-          }
-        }
-      }
-      
-      return summe;
-    },
-    // Berechnet den Saldo für ein Quartal (ohne Anteile Andrea)
-    getQuartalsSaldoOhneAndrea(quartal) {
-      return this.getQuartalsSummeOhneAndrea(quartal, 'einnahmen') - this.getQuartalsSummeOhneAndrea(quartal, 'ausgaben');
-    },
-    // Berechnet das monatliche Mittel für ein Quartal (ohne Anteile Andrea)
-    getQuartalsMittelOhneAndrea(quartal, typ) {
-      return this.getQuartalsSummeOhneAndrea(quartal, typ) / 3; // Durch 3 Monate teilen
-    },
-     // Und auch hier für die Halbjahresmethoden...
-    getHalbjahrSummeOhneAndrea(halbjahr, typ) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-      
-      const startMonat = (halbjahr - 1) * 6 + 1;
-      const endMonat = startMonat + 5;
-      
-      let summe = 0;
-      for (let monat = startMonat; monat <= endMonat; monat++) {
-        const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-        if (monatsDaten) {
-          if (typ === 'ausgaben') {
-            summe += monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-              if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-                return sum + ausgabe.betrag;
-              }
-              return sum;
-            }, 0);
-          } else { // einnahmen
-            if (monatsDaten.einnahmen) {
-              summe += monatsDaten.einnahmen.reduce((sum, einnahme) => {
-                if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
-                  return sum + einnahme.betrag;
-                }
-                return sum;
-              }, 0);
-            }
-          }
-        }
-      }
-      
-      return summe;
-    },
-    // Berechnet den Saldo für ein Halbjahr (ohne Anteile Andrea)
-    getHalbjahrSaldoOhneAndrea(halbjahr) {
-      return this.getHalbjahrSummeOhneAndrea(halbjahr, 'einnahmen') - this.getHalbjahrSummeOhneAndrea(halbjahr, 'ausgaben');
-    },
-	// Berechnet das monatliche Mittel für ein Halbjahr (ohne Anteile Andrea)
-    getHalbjahrMittelOhneAndrea(halbjahr, typ) {
-      return this.getHalbjahrSummeOhneAndrea(halbjahr, typ) / 6; // Durch 6 Monate teilen
-    },
-	
-    // Berechnet den Saldo für einen bestimmten Monat (ohne Andrea)
-    getMonatsSaldoOhneAndrea(monat) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-  
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return 0;
-  
-      // Ausgaben ohne Andrea für diesen Monat
-      const ausgabenOhneAndrea = monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-        if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-          return sum + ausgabe.betrag;
-        }
-        return sum;
-      }, 0);
-  
-      // Einnahmen ohne Andrea für diesen Monat
-      let einnahmenOhneAndrea = 0;
-      if (monatsDaten.einnahmen) {
-        einnahmenOhneAndrea = monatsDaten.einnahmen.reduce((sum, einnahme) => {
-          if (einnahme.kategorie !== KATEGORIE_EINNAHMEN_ANDREA) {
-            return sum + einnahme.betrag;
-           }
-          return sum;
-        }, 0);
-      }
-  
-      // Saldo = Einnahmen - Ausgaben
-      return einnahmenOhneAndrea - ausgabenOhneAndrea;
+      return monate[monatNummer - 1] || '';
     },
 
-    // Hilfsmethode um zu verstehen, was der virtuelle Kontostand bedeutet
-    erklaeVirtuellenKontostand(monat) {
-      const explanation = {
-        monat: monat,
-        monatName: this.getMonatName(monat),
-        bisheriger_saldo: this.getVirtuellerKontostandOhneAndrea(monat),
-        interpretation: ''
-      };
-  
-      if (explanation.bisheriger_saldo > 0) {
-        explanation.interpretation = `Sie sind ${this.formatCurrency(Math.abs(explanation.bisheriger_saldo))} besser als geplant.`;
-      } else if (explanation.bisheriger_saldo < 0) {
-        explanation.interpretation = `Sie sind ${this.formatCurrency(Math.abs(explanation.bisheriger_saldo))} schlechter als geplant.`;
-      } else {
-        explanation.interpretation = 'Sie liegen genau im Plan.';
+	formatCurrency(value) {
+      if (value === 0 || value === null || value === undefined) return '';
+      return new Intl.NumberFormat('de-DE', { 
+        style: 'currency', 
+        currency: 'EUR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(value);
+    },
+    jahrMinus() {
+      if (this.jahr > 2020) {
+        this.jahr -= 1;
+		console.log("Neues Jahr (Minus):", this.jahr);
+        this.loadJahresdaten();
       }
-  
-     return explanation;
     },
-	// Neue Methode: Kumulatives Delta zum Ausgaben-Mittel
-	getKontostandMonatsendeSoll(monat) {
-      let kumulativesDelta = 0;
-
-      for (let m = 1; m <= monat; m++) {
-        // Vorzeichen umkehren: Subtrahend und Minuend vertauschen
-        kumulativesDelta += (this.monatlicheAusgabenOhneAndrea - this.getTatsaechlicheAusgabenOhneAndrea(m));
-      }
-
-      return kumulativesDelta;
+    jahrPlus() {
+      this.jahr += 1;
+      console.log("Neues Jahr (Plus):", this.jahr);
+      this.loadJahresdaten();
     },
-
-	// Zusätzliche Methode für eine alternative Berechnung des virtuellen Kontostands
-	// Diese Methode zeigt, wie viel Sie vom Jahresmittel abweichen (kumulativ)
-	getVirtuellerKontostandAlternativ(monat) {
-      let kumulativesDelta = 0;
-  
-      for (let m = 1; m <= monat; m++) {
-        kumulativesDelta += this.getDeltaZumMittelOhneAndrea(m);
-      }
-  
-      return kumulativesDelta;
-    },
-	getTatsaechlicheAusgabenOhneAndrea(monat) {
-      if (!this.jahresUebersicht || !this.jahresUebersicht.monats_daten) return 0;
-  
-      const monatsDaten = this.jahresUebersicht.monats_daten.find(m => m.monat === monat);
-      if (!monatsDaten) return 0;
-  
-      return monatsDaten.ausgaben.reduce((sum, ausgabe) => {
-        if (ausgabe.kategorie !== KATEGORIE_AUSGABEN_ANDREA) {
-          return sum + ausgabe.betrag;
-        }
-        return sum;
-      }, 0);
-    },
-
-	// Methode um den aktuellen Kontostand zu vergleichen (für Ihre neue Funktion)
-	// Diese würden Sie in der Monatsübersicht verwenden
-	vergleicheKontostand(aktuellerKontostand, monat) {
-      const virtuellerKontostand = this.getVirtuellerKontostandOhneAndrea(monat);
-      const differenz = aktuellerKontostand - virtuellerKontostand;
-  
-      return {
-        virtuell: virtuellerKontostand,
-        aktuell: aktuellerKontostand,
-        differenz: differenz,
-        status: differenz >= 0 ? 'plus' : 'minus',
-        statusText: differenz >= 0 ? 'Im Plus' : 'Im Minus'
-      };
-    }
-
-	//isAusgabeAktiv(posten, monat, jahr) {
-      // Hier rufst du die importierte Funktion auf
-     // return true; //isAusgabeAktiv(posten, monat, jahr);
-	// }
-  }
+  },
+    mounted() {
+      console.log("Komponente geladen, lade Jahr:", this.jahr);
+      this.loadJahresdaten();
+	}
 };
+
+
 </script>
 
+
 <style scoped>
-.jahresuebersicht-container {
-  margin: 20px;
+.jahresuebersicht {
+  font-size: 0.9rem;
 }
 
-.loading, .error {
-  padding: 20px;
-  text-align: center;
+.table thead th {
+  position: sticky;
+  top: 0;
+  background-color: #f8f9fa;
+  z-index: 1;
 }
 
-.summary-box {
-  background-color: #f5f5f5;
-  border-radius: 5px;
-  padding: 15px;
-  margin-bottom: 20px;
+.table tbody tr:nth-child(even) {
+  background-color: #fcfcfc;
 }
 
-.summary-item {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
+.table td,
+.table th {
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
-.label {
-  font-weight: bold;
+.card {
+  border-radius: 0.4rem;
+  border: 1px solid #dee2e6;
 }
 
-.table-container {
-  overflow-x: auto;
-  margin-bottom: 30px;
+.card-header {
+  font-size: 1rem;
 }
 
-.posten-matrix-tabelle {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 20px;
+.ps-4 {
+  padding-left: 1.5rem !important;
 }
 
-.posten-matrix-tabelle th,
-.posten-matrix-tabelle td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: right;
-}
-
-.posten-matrix-tabelle th:first-child,
-.posten-matrix-tabelle td:first-child {
-  text-align: left;
-}
-
-.kategorie-header td {
-  background-color: #f0f0f0;
-  font-weight: bold;
-  text-align: left;
-}
-
-.summe-zeile {
-  background-color: #f9f9f9;
-}
-
-.positive {
-  color: green;
-}
-
-.negative {
-  color: red;
-}
-
-.anteile-andrea-section {
-  margin-top: 40px;
-  border-top: 2px solid #ccc;
-  padding-top: 20px;
-}
-
-.periode-uebersicht {
-  margin-top: 40px;
-}
-
-.perioden-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.periode-box {
-  flex: 1;
-  min-width: 300px;
-}
-
-.periode-tabelle {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.periode-tabelle th,
-.periode-tabelle td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: right;
-}
-
-.periode-tabelle th:first-child,
-.periode-tabelle td:first-child {
-  text-align: center;
-}
-
-/* Zusätzliche CSS-Styles für JahresUebersicht.vue */
-
+/* Dezente Summenzeilen, ohne knallige Farben */
 .summe-zeile.ausgaben {
-  background-color: #ffe6e6;
+  background-color: #fdf2f2;
 }
-
 .summe-zeile.einnahmen {
-  background-color: #e6ffe6;
+  background-color: #f2fdf2;
 }
-
 .summe-zeile.saldo {
-  background-color: #e6f3ff;
-  font-weight: bold;
+  background-color: #f5f9ff;
+  font-weight: 600;
 }
 
-.virtual-balance {
-  background-color: #fff2e6;
-  font-weight: bold;
-}
-
-.delta-mittel {
-  background-color: #f0f0f0;
-}
-
-.kumulativ-delta {
-  background-color: #e8f4f8;
-  font-weight: bold;
-}
-
-.positive {
-  color: #28a745;
-  font-weight: bold;
-}
-
-.negative {
-  color: #dc3545;
-  font-weight: bold;
-}
-
-/* Tooltips für bessere Erklärung */
+/* Tooltips beibehalten (wenn du sie nutzt) */
 .tooltip {
   position: relative;
   cursor: help;
 }
-
 .tooltip::after {
   content: attr(data-tooltip);
   position: absolute;
@@ -1042,8 +560,17 @@ export default {
   pointer-events: none;
   transition: opacity 0.3s;
 }
-
 .tooltip:hover::after {
   opacity: 1;
 }
+
+/* Optional: leichtes Hover für Tabellenzeilen */
+.table-hover tbody tr:hover {
+  background-color: #f8f9fa;
+}
+.table td:last-child {
+  background-color: #fafafa;
+  font-style: italic;
+}
+
 </style>
