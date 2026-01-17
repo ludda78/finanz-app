@@ -15,6 +15,10 @@ Please see CONTRIBUTING.md for development and release workflow.
 See [DEPLOYMENT.md](DEPLOYMENT.md) for instructions on running Finanzapp in
 development and production environments.
 
+## Releases
+
+See [RELEASING.md](RELEASING.md) for the official release process.
+
 ## Anwenderhilfe
 <!-- INFO_START -->
 
