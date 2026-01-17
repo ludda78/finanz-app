@@ -7,6 +7,9 @@ Die Finanzapp ist ein System zur Verwaltung von Haushaltsfinanzen: feste Posten 
 - **Zielplattform:** Raspberry Pi (lokal)
 
 ---
+## Contributing
+Please see CONTRIBUTING.md for development and release workflow.
+
 
 ## Anwenderhilfe
 <!-- INFO_START -->
@@ -73,25 +76,88 @@ uvicorn main:app --reload
 
 # finanzapp-frontend
 
-## Project setup
-```
+Frontend (Vue CLI)
+cd frontend
 npm install
-```
 
-### Compiles and hot-reloads for development
-```
+
+Development (Hot-Reload):
+
 npm run serve
-```
 
-### Compiles and minifies for production
-```
+
+Production Build:
+
 npm run build
-```
 
-### Lints and fixes files
-```
+
+Lint & Fix:
+
 npm run lint
-```
 
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+
+👉 Konfiguration siehe: Vue CLI Configuration Reference
+
+Datenbank
+
+Wichtige Tabellen:
+
+feste_ausgaben
+
+feste_einnahmen
+
+ungeplante_transaktionen
+
+kontostand_monatsende_soll
+
+kontostand_monatsende_ist (enthält Ist-Kontostände, UNIQUE (jahr, monat))
+
+Beispiel-Migration Ist-Kontostände:
+
+CREATE TABLE IF NOT EXISTS kontostand_monatsende_ist (
+    id SERIAL PRIMARY KEY,
+    jahr INT NOT NULL,
+    monat INT NOT NULL,
+    ist_kontostand NUMERIC(10,2) NOT NULL,
+    soll_kontostand NUMERIC(10,2),
+    abweichung NUMERIC(10,2),
+    erstellt_am TIMESTAMP DEFAULT NOW(),
+    UNIQUE (jahr, monat)
+);
+
+API-Endpunkte (Auswahl)
+Soll-Kontostände
+
+POST /soll-kontostaende/berechnen/{jahr} → berechnet alle Soll-Werte für ein Jahr
+
+GET /soll-kontostaende/{jahr} → liefert Soll-Kontostände des Jahres
+
+GET /soll-kontostaende/{jahr}/{monat} → liefert Soll-Kontostand für einen Monat
+
+Ist-Kontostände
+
+POST /kontostand-ist → legt an oder aktualisiert (via ON CONFLICT DO UPDATE)
+
+GET /kontostand-ist/{jahr}/{monat} → liest den Ist-Kontostand eines Monats
+
+Monats-/Jahresdaten
+
+GET /monatsuebersicht/{jahr}/{monat} → feste Einnahmen/Ausgaben für Monat
+
+GET /monatswerte/{jahr}/{monat} → Ist-Werte (z. B. tatsächlich gezahlte Beträge)
+
+GET /ungeplante-transaktionen/{jahr}/{monat} → ungeplante Einnahmen/Ausgaben
+
+Dev-Hinweise
+
+Axios-Responses immer über .data auslesen.
+
+SQLAlchemy Row-Objekte → dict(row._mapping) konvertieren.
+
+Frontend-State:
+
+festeAusgaben, festeEinnahmen
+
+ungeplannteAusgaben, ungeplannteEinnahmen
+
+sollKontostand, istKontostand, sollKontostandVormonat
