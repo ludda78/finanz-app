@@ -10,6 +10,10 @@ Die Finanzapp ist ein System zur Verwaltung von Haushaltsfinanzen: feste Posten 
 ## Contributing
 Please see CONTRIBUTING.md for development and release workflow.
 
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for instructions on running Finanzapp in
+development and production environments.
 
 ## Anwenderhilfe
 <!-- INFO_START -->
