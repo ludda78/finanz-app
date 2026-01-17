@@ -94,13 +94,13 @@
         </thead>
         <tbody>
           <tr v-for="einnahme in einnahmen" :key="einnahme.id">
-            <td>{{ einnahme.name }}</td>
+            <td>{{ einnahme.beschreibung }}</td>
             <td>{{ einnahme.betrag }} €</td>
             <td>
               <input 
                 type="number" 
                 v-model.number="einnahme.ist_wert"
-                @blur="speichereIstWert(einnahme.id, einnahme.ist_wert, 'einnahme', einnahme.name, einnahme.betrag)"
+				@blur="speichereIstWert(einnahme.id, einnahme.ist_wert, 'einnahme', einnahme.beschreibung, einnahme.betrag)"
               />
             </td>
             <td :style="{ color: einnahme.ist_wert < einnahme.betrag ? 'red' : 'green' }">
@@ -311,6 +311,13 @@
           </table>
         </div>
       </div>
+      <!-- Scroll-to-Top Button -->
+      <button 
+        v-show="showScrollTop"
+        @click="scrollToTop"
+        class="scroll-top-btn">
+        ↑ Nach oben
+      </button>
     </div>
   </div>
 </template>
@@ -369,6 +376,7 @@ export default {
       ],
       jahre: [],
       kategorienReihenfolge: ['Versicherungen', 'Autos', 'Kredite', 'Haus', 'Kinder', 'Hund', 'Sonstiges', 'Anteile Andrea'],
+      showScrollTop: false,
     };
   },
   computed: {
@@ -482,6 +490,10 @@ export default {
   },
   mounted() {
     this.ladeMonatsUebersicht();
+	window.addEventListener("scroll", this.checkScroll);
+  },
+   beforeUnmount() {
+    window.removeEventListener("scroll", this.checkScroll);
   },
   methods: {
 
@@ -879,6 +891,12 @@ export default {
       console.error("Fehler beim Speichern des Ist-Kontostands:", error);
     }
   },
+  checkScroll() {
+      this.showScrollTop = window.scrollY > 300; // ab 300px sichtbar
+    },
+    scrollToTop() {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
 
   },
   watch: {
@@ -1145,6 +1163,29 @@ input[type="number"] {
   cursor: help;
   font-size: 0.9em;
   color: #0d6efd;               /* Bootstrap-Blau */
+}
+
+.scroll-top-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  background-color: #198754; /* Bootstrap grün */
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  transition: opacity 0.3s ease;
+  z-index: 1000;
+}
+.scroll-top-btn:hover {
+  background-color: #157347;
+}
+.scroll-top-btn[style*="display: none"] {
+  opacity: 0;
 }
 
 </style>
