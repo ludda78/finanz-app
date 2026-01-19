@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from crud import create_ungeplante_transaktion, get_ungeplante_transaktionen
 from enum import Enum
 from crud import berechne_soll_kontostaende_fuer_jahr, verify_jahresuebersicht_calculation
-
+from config import ENABLE_DOCS, FRONTEND_ORIGINS
 
 
 # Enum für den Status der ungeplanten Ausgaben
@@ -100,16 +100,19 @@ class UngeplantTransaktionCreate(BaseModel):
     status: Optional[TransaktionStatus] = TransaktionStatus.KEIN_AUSGLEICH
 
 
-app = FastAPI()
-
-# Erlaube CORS für alle Ursprünge (optional: kannst auch eine bestimmte URL angeben)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Erlaube alle Ursprünge (kann auch auf ["http://192.168.178.138:8080"] beschränkt werden)
-    allow_credentials=True,
-    allow_methods=["*"],  # Erlaube alle Methoden wie GET, POST, etc.
-    allow_headers=["*"],  # Erlaube alle Header
+app = FastAPI(
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url=None,
 )
+
+if FRONTEND_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=FRONTEND_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 # Umgebungsvariablen aus .env Datei laden
 load_dotenv()
@@ -138,6 +141,11 @@ def get_db_psycopg():
         yield conn
     finally:
         conn.close()
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
         
 @app.get("/feste-ausgaben/")
 def get_feste_ausgaben():
