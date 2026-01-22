@@ -323,14 +323,13 @@
 </template>
 
 <script>
-import axios from "axios";
-//import { isAusgabeAktiv } from '@/utils/finanzHelpers';
-const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
+import api from "@/api";
+
 
 // API-Endpunkte für die verschiedenen Funktionen
-const monatsuebersichtUrl = `${apiBaseUrl}/monatsuebersicht`;
-const monatswerteUrl = `${apiBaseUrl}/monatswerte`;
-const ungeplanteTrxUrl = `${apiBaseUrl}/ungeplante-transaktionen`;
+const monatsuebersichtUrl = "monatsuebersicht";
+const monatswerteUrl = "monatswerte";
+const ungeplanteTrxUrl = "ungeplante-transaktionen";
 
 
 export default {
@@ -532,27 +531,9 @@ export default {
       this.updateRoute();
     },
     
-/*      async ladeMonatsUebersicht() {
-       try {
-         const response = await axios.get(`${monatsuebersichtUrl}/${this.monat}/${this.jahr}`);
-      
-         console.log("API Response:", response.data);
-      
-         this.festeAusgaben = response.data.feste_ausgaben.map(ausgabe => ({ ...ausgabe, ist_wert: 0 }));
-         this.festeEinnahmen = response.data.feste_einnahmen.map(einnahme => ({ ...einnahme, ist_wert: 0 }));
-      
-         await this.ladeIstWerte();
-         await this.ladeUngeplannteTransaktionen();
-         await this.ladeKontostandDaten(); // Diese Zeile ist wichtig!
-      
-       } catch (error) {
-         console.error("Fehler beim Laden der Daten:", error);
-       }
-     }, */
-	// 4. Angepasste ladeMonatsUebersicht Methode
     async ladeMonatsUebersicht() {
       try {
-        const response = await axios.get(`${monatsuebersichtUrl}/${this.monat}/${this.jahr}`);
+        const response = await api.get(`/${monatsuebersichtUrl}/${this.monat}/${this.jahr}`);
       
         console.log("API Response:", response.data);
       
@@ -570,7 +551,7 @@ export default {
     
     async ladeIstWerte() {
       try {
-		const istWerteResponse = await axios.get(`${monatswerteUrl}/${this.monat}/${this.jahr}`);
+		const istWerteResponse = await api.get(`/${monatswerteUrl}/${this.monat}/${this.jahr}`);
 
         const istWerte = istWerteResponse.data.monatswerte;
         
@@ -590,7 +571,7 @@ export default {
     
     async ladeUngeplannteTransaktionen() {
       try {
-        const ungeplannteResponse = await axios.get(`${ungeplanteTrxUrl}/${this.monat}/${this.jahr}`);
+        const ungeplannteResponse = await api.get(`/${ungeplanteTrxUrl}/${this.monat}/${this.jahr}`);
         this.ungeplannteAusgaben = ungeplannteResponse.data.filter(t => t.typ === 'ausgabe');
         this.ungeplannteEinnahmen = ungeplannteResponse.data.filter(t => t.typ === 'einnahme');
       } catch (error) {
@@ -600,7 +581,7 @@ export default {
 
     async speichereIstWert(eintrag_id, wert, kategorie, beschreibung, betrag) {
       try {
-        const response = await axios.post(`${monatswerteUrl}/`, {
+        const response = await api.post(`/${monatswerteUrl}/`, {
           eintrag_id,
           monat: this.monat,
           jahr: this.jahr,
@@ -677,7 +658,7 @@ export default {
         ...this.newAusgabe,
         id: this.editAusgabeId  // ID explizit setzen
       };
-      response = await axios.put(`${ungeplanteTrxUrl}/${this.editAusgabeId}`, updateData);
+      response = await api.put(`/${ungeplanteTrxUrl}/${this.editAusgabeId}`, updateData);
       
       // Aktualisiere die lokale Liste komplett
       const index = this.ungeplannteAusgaben.findIndex(a => a.id === this.editAusgabeId);
@@ -688,7 +669,7 @@ export default {
       this.editAusgabeId = null;
     } else {
       // Neue Ausgabe hinzufügen
-      response = await axios.post(ungeplanteTrxUrl, this.newAusgabe);
+      response = await api.post(`/${ungeplanteTrxUrl}`, this.newAusgabe);
       this.ungeplannteAusgaben.push(response.data);
     }
     
@@ -715,7 +696,7 @@ export default {
         let response;
         if (this.editEinnahmeId) {
           // Update bestehende Einnahme
-          response = await axios.put(`${ungeplanteTrxUrl}/${this.editEinnahmeId}`, this.newEinnahme);
+          response = await api.put(`/${ungeplanteTrxUrl}/${this.editEinnahmeId}`, this.newEinnahme);
           
           // Aktualisiere die lokale Liste
           const index = this.ungeplannteEinnahmen.findIndex(e => e.id === this.editEinnahmeId);
@@ -726,7 +707,7 @@ export default {
           this.editEinnahmeId = null;
         } else {
           // Neue Einnahme hinzufügen
-          response = await axios.post(ungeplanteTrxUrl, this.newEinnahme);
+          response = await api.post(`/${ungeplanteTrxUrl}`, this.newEinnahme);
           this.ungeplannteEinnahmen.push(response.data);
         }
         
@@ -749,7 +730,7 @@ export default {
       }
       
       try {
-        await axios.delete(`${ungeplanteTrxUrl}/${id}`);
+        await api.delete(`/${ungeplanteTrxUrl}/${id}`);
         
         // Entferne den Eintrag aus der lokalen Liste
         if (typ === 'ausgabe') {
@@ -794,7 +775,7 @@ export default {
         status: newStatus
       };
     
-      const response = await axios.put(`${ungeplanteTrxUrl}/${ausgabe.id}`, updateData);
+      const response = await api.put(`/${ungeplanteTrxUrl}/${ausgabe.id}`, updateData);
     
       // Aktualisieren Sie den gesamten Eintrag in der lokalen Liste
       const index = this.ungeplannteAusgaben.findIndex(a => a.id === ausgabe.id);
@@ -824,14 +805,14 @@ export default {
     async ladeKontostandDaten() {
       try {
         // SOLL-Kontostand für aktuellen Monat laden
-        const { data: sollData } = await axios.get(
-          `${apiBaseUrl}/soll-kontostaende/${this.jahr}/${this.monat}`
+        const { data: sollData } = await api.get(
+          `/soll-kontostaende/${this.jahr}/${this.monat}`
         );
         this.sollKontostand = sollData?.kontostand_soll ?? 0;
 
         // IST-Kontostand für aktuellen Monat laden
-        const { data: istData } = await axios.get(
-          `${apiBaseUrl}/kontostand-ist/${this.jahr}/${this.monat}`
+        const { data: istData } = await api.get(
+          `/kontostand-ist/${this.jahr}/${this.monat}`
         );
         this.istKontostand = istData?.ist_kontostand ?? null;
 
@@ -856,10 +837,10 @@ export default {
     async berechneSollKontostand() {
     try {
       // Berechnung für das ganze Jahr anstoßen
-      await axios.post(`${apiBaseUrl}/soll-kontostaende/berechnen/${this.jahr}`);
+      await api.post(`/soll-kontostaende/berechnen/${this.jahr}`);
 
       // Den gerade berechneten Monat erneut holen
-      const { data } = await axios.get(`${apiBaseUrl}/soll-kontostaende/${this.jahr}/${this.monat}`);
+      const { data } = await api.get(`/soll-kontostaende/${this.jahr}/${this.monat}`);
       this.sollKontostand = data?.kontostand_soll ?? 0;
 
       console.log("✅ Soll-Kontostand neu berechnet:", this.sollKontostand);
@@ -878,7 +859,7 @@ export default {
     if (this.istKontostand === null || this.istKontostand === '') return;
     
     try {
-      const response = await axios.post(`${apiBaseUrl}/kontostand-ist`, {
+      const response = await api.post(`/kontostand-ist`, {
         monat: this.monat,
         jahr: this.jahr,
         ist_kontostand: parseFloat(this.istKontostand),

@@ -216,10 +216,8 @@
 
 
 <script>
-import axios from 'axios';
-
-const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
-const jahresUebersichtUrl = `${apiBaseUrl}/jahresuebersicht`;
+import api from "@/api";
+const jahresUebersichtUrl = "jahresuebersicht";
 
 export default {
   name: 'JahresUebersicht',
@@ -438,7 +436,7 @@ export default {
      console.log("Lade Jahr:", this.jahr);
 
       try {
-        const { data } = await axios.get(`${jahresUebersichtUrl}/${this.jahr}`);
+        const { data } = await api.get(`/${jahresUebersichtUrl}/${this.jahr}`);
         this.mittelAusgabenOhneAndrea = Number(data.monatliches_mittel_ausgaben_ohne_andrea ?? 0);
         this.monate = this.ensureTwelve((data.monate || []).map(this.normMonth));
 

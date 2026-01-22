@@ -469,12 +469,13 @@
 </template>
 
 <script>
-import axios from "axios";
-const apiBaseUrl = process.env.VUE_APP_API_BASE_URL;
-const apiUrlAusgabe = `${apiBaseUrl}/feste-ausgaben`;
-const apiUrlEinnahme = `${apiBaseUrl}/feste_einnahmen`;
-const apiUrlAusgabeChangesBase = `${apiBaseUrl}/feste-ausgaben`;
-const apiUrlEinnahmeChangesBase = `${apiBaseUrl}/feste-einnahmen`;
+import api from "@/api";
+
+const apiUrlAusgabe = "feste-ausgaben";
+const apiUrlEinnahme = "feste-einnahmen";
+const apiUrlAusgabeChangesBase = "feste-ausgaben";
+const apiUrlEinnahmeChangesBase = "feste-einnahmen";
+
 
 export default {  
   name: "FesteKonfiguration",
@@ -615,8 +616,7 @@ export default {
     // Fetch-Methoden
     async fetchFesteAusgaben() {
       try {
-        // const response = await axios.get("http://192.168.178.138:8000/feste-ausgaben/");
-		const response = await axios.get(`${apiUrlAusgabe}/`);
+		const response = await api.get(`/${apiUrlAusgabe}/`);
 
         this.festeAusgaben = response.data;
       } catch (error) {
@@ -626,8 +626,7 @@ export default {
     
    async fetchFesteEinnahmen() {
   try {
-    //const response = await axios.get("http://192.168.178.138:8000/feste_einnahmen");
-	const response = await axios.get(apiUrlEinnahme);
+	const response = await api.get(`/${apiUrlEinnahme}`);
     if (response.data && response.data.feste_einnahmen) {
       this.festeEinnahmen = response.data.feste_einnahmen;
     } else {
@@ -637,14 +636,12 @@ export default {
     console.error("Fehler beim Laden der festen Einnahmen:", error);
     // Falls API noch nicht aktualisiert wurde, versuche die alte Methode als Fallback
     try {
-      //const allMonthsResponse = await axios.get("http://192.168.178.138:8000/feste_einnahmen/0");
-      const allMonthsResponse = await axios.get(`${apiUrlEinnahme}/0`);
+      const allMonthsResponse = await api.get(`/${apiUrlEinnahme}/0`);
       if (allMonthsResponse.data && allMonthsResponse.data.feste_einnahmen) {
         this.festeEinnahmen = allMonthsResponse.data.feste_einnahmen;
       } else {
         // Fallback: Versuche einen beliebigen Monat (z.B. Januar)
-        //const janResponse = await axios.get("http://192.168.178.138:8000/feste_einnahmen/1");
-        const janResponse = await axios.get(`${apiUrlEinnahme}/1`);
+        const janResponse = await api.get(`/${apiUrlEinnahme}/1`);
         if (janResponse.data && janResponse.data.feste_einnahmen) {
           this.festeEinnahmen = janResponse.data.feste_einnahmen;
         }
@@ -738,9 +735,8 @@ export default {
           this.updateZahlungsmonate();
         }
         
-        const response = await axios.post(
-          //"http://192.168.178.138:8000/feste-ausgaben/", 
-           `${apiUrlAusgabe}/`,
+        const response = await api.post(
+           `/${apiUrlAusgabe}/`,
           this.neueAusgabe
         );
         
@@ -826,7 +822,7 @@ export default {
           (this.editedAusgabe.zahlungsmonate || []).map(n => parseInt(n))
         )].sort((a, b) => a - b);
 
-        await axios.put(`${apiUrlAusgabe}/${this.editedAusgabe.id}`, this.editedAusgabe);
+        await api.put(`/${apiUrlAusgabe}/${this.editedAusgabe.id}`, this.editedAusgabe);
 
         await this.fetchFesteAusgaben();
         this.showEditAusgabeForm = false;
@@ -843,8 +839,7 @@ export default {
       if (!confirm("Möchtest du diese feste Ausgabe wirklich löschen?")) return;
       
       try {
-        // await axios.delete(`http://192.168.178.138:8000/feste-ausgaben/${id}`);
-		await axios.delete(`${apiUrlAusgabe}/${id}`);
+		await api.delete(`/${apiUrlAusgabe}/${id}`);
         
         // Ausgabe aus der Liste entfernen
         this.festeAusgaben = this.festeAusgaben.filter(a => a.id !== id);
@@ -863,9 +858,8 @@ export default {
           alert("Enddatum darf nicht vor dem Startdatum liegen.");
           return;
         }
-        const response = await axios.post(
-          // "http://192.168.178.138:8000/feste_einnahmen/", 
-          `${apiUrlEinnahme}/`,
+        const response = await api.post(
+          `/${apiUrlEinnahme}/`,
           this.neueEinnahme
         );
         
@@ -915,9 +909,8 @@ export default {
           alert("Enddatum darf nicht vor dem Startdatum liegen.");
           return;
         }
-        await axios.put(
-           // `http://192.168.178.138:8000/feste_einnahmen/${this.editedEinnahme.id}`, 
-           `${apiUrlEinnahme}/${this.editedEinnahme.id}`,
+        await api.put(
+           `/${apiUrlEinnahme}/${this.editedEinnahme.id}`,
            this.editedEinnahme
          );
         
@@ -936,10 +929,7 @@ export default {
       if (!confirm("Möchtest du diese feste Einnahme wirklich löschen?")) return;
       
       try {
-        // Da dein API bisher keinen Delete-Endpunkt hat, müssen wir improvisieren
-        // Mit einem DELETE würde es so aussehen:
-        // await axios.delete(`http://192.168.178.138:8000/feste_einnahmen/${id}`);
-		await axios.delete(`${apiUrlEinnahme}/${id}`);
+		await api.delete(`/${apiUrlEinnahme}/${id}`);
         
        } catch (error) {
         console.error("Fehler beim Löschen der Einnahme:", error);
@@ -965,8 +955,8 @@ export default {
       this.changesLoading = true;
       try {
         const base = this.selectedItem.typ === 'ausgabe' ? apiUrlAusgabeChangesBase : apiUrlEinnahmeChangesBase;
-        const url = `${base}/${this.selectedItem.id}/aenderungen`;
-        const res = await axios.get(url);
+        const url = `/${base}/${this.selectedItem.id}/aenderungen`;
+        const res = await api.get(url);
         // aufsteigend sortieren & Edit-Puffer anlegen
         const rows = (res.data || []).sort((a,b)=> a.gueltig_ab.localeCompare(b.gueltig_ab))
           .map(x => ({ ...x, _edit: { gueltig_ab: x.gueltig_ab, betrag: x.betrag } }));
@@ -985,8 +975,8 @@ export default {
       if (!this.selectedItem) return;
       try {
         const base = this.selectedItem.typ === 'ausgabe' ? apiUrlAusgabeChangesBase : apiUrlEinnahmeChangesBase;
-        const url = `${base}/${this.selectedItem.id}/aenderungen`;
-        await axios.post(url, {
+        const url = `/${base}/${this.selectedItem.id}/aenderungen`;
+        await api.post(url, {
           gueltig_ab: this.newChange.gueltig_ab,
           betrag: Number(this.newChange.betrag),
         });
@@ -1010,11 +1000,11 @@ export default {
 
 
         const url = (this.selectedItem.typ === 'ausgabe')
-          ? `${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
-          : `${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
+          ? `/${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
+          : `/${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
 
 
-         await axios.patch(url, payload);
+         await api.patch(url, payload);
          await this.loadChanges();
       } catch (e) {
         console.error('Speichern fehlgeschlagen', e);
@@ -1028,9 +1018,9 @@ export default {
       if (!confirm('Änderung wirklich löschen?')) return;
       try {
         const url = (this.selectedItem.typ === 'ausgabe')
-        ? `${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
-        : `${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
-        await axios.delete(url);
+        ? `/${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
+        : `/${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
+        await api.delete(`/${url}`);
         await this.loadChanges();
       } catch (e) {
         console.error('Löschen fehlgeschlagen', e);
