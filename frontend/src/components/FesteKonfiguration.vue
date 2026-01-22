@@ -472,7 +472,7 @@
 import api from "@/api";
 
 const apiUrlAusgabe = "feste-ausgaben";
-const apiUrlEinnahme = "feste-einnahmen";
+const apiUrlEinnahme = "feste_einnahmen";
 const apiUrlAusgabeChangesBase = "feste-ausgaben";
 const apiUrlEinnahmeChangesBase = "feste-einnahmen";
 
