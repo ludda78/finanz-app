@@ -581,7 +581,7 @@ export default {
 
     async speichereIstWert(eintrag_id, wert, kategorie, beschreibung, betrag) {
       try {
-        const response = await api.post(`/${monatswerteUrl}/`, {
+        const response = await api.post(`/${monatswerteUrl}`, {
           eintrag_id,
           monat: this.monat,
           jahr: this.jahr,
