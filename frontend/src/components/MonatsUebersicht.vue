@@ -24,6 +24,9 @@
    </div>
    <!-- Rest of your MonatsUebersicht component content -->
     <h1>Übersicht für {{ monate[selectedMonth - 1] }} {{ selectedYear }}</h1>
+    <p v-if="lastModified" class="last-modified">
+      Zuletzt geändert: {{ new Date(lastModified).toLocaleString('de-DE') }}
+    </p>
 
     <h2>Feste Ausgaben</h2>
     <!-- Gruppiere feste Ausgaben nach Kategorie -->
@@ -342,6 +345,7 @@ export default {
       festeEinnahmen: [],
       ungeplannteAusgaben: [],
       ungeplannteEinnahmen: [],
+      lastModified: null,
       sollKontostand: 0, // Wird vom Backend geladen
       istKontostand: null,
       sollKontostandVormonat: 0, // Wird bereits verwendet
@@ -539,6 +543,7 @@ export default {
       
         this.festeAusgaben = response.data.feste_ausgaben.map(ausgabe => ({ ...ausgabe, ist_wert: 0 }));
         this.festeEinnahmen = response.data.feste_einnahmen.map(einnahme => ({ ...einnahme, ist_wert: 0 }));
+        this.lastModified = response.data.last_modified || null;
       
         await this.ladeIstWerte();
         await this.ladeUngeplannteTransaktionen();
@@ -894,6 +899,13 @@ export default {
 
 </script>
 <style scoped>
+.last-modified {
+  font-size: 0.8em;
+  color: #888;
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
+
 .month-selector {
   margin-bottom: 20px;
   display: flex;

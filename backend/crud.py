@@ -373,12 +373,13 @@ def berechne_und_speichere_soll_kontostaende(conn, jahr):
 
 def save_ist_kontostand(db, payload: dict):
     stmt = text("""
-        INSERT INTO kontostand_monatsende_ist (jahr, monat, ist_kontostand, soll_kontostand, abweichung)
-        VALUES (:jahr, :monat, :ist, :soll, :abw)
+        INSERT INTO kontostand_monatsende_ist (jahr, monat, ist_kontostand, soll_kontostand, abweichung, updated_at)
+        VALUES (:jahr, :monat, :ist, :soll, :abw, NOW())
         ON CONFLICT (jahr, monat)
         DO UPDATE SET ist_kontostand = EXCLUDED.ist_kontostand,
                       soll_kontostand = EXCLUDED.soll_kontostand,
-                      abweichung = EXCLUDED.abweichung
+                      abweichung = EXCLUDED.abweichung,
+                      updated_at = NOW()
         RETURNING *;
     """)
     result = db.execute(stmt, {

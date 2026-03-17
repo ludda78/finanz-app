@@ -60,6 +60,7 @@ class MonatsuebersichtResponse(BaseModel):
     ungeplante_einnahmen: List[UngeplanteEinnahmeSchema]
     gesamt_ausgaben: float
     gesamt_einnahmen: float
+    last_modified: Optional[datetime] = None
 
 class UngeplantTransaktionCreate(BaseModel):
     typ: str

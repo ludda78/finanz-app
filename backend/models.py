@@ -52,6 +52,7 @@ class Monatswert(Base):
     beschreibung = Column(String, nullable=False)
     soll = Column(Integer, nullable=False)
     ist = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now())
     
 class UngeplantTransaktion(Base):
     __tablename__ = "ungeplante_transaktionen"

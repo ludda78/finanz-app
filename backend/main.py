@@ -644,6 +644,22 @@ FROM ungeplante_ausgaben
         sum(float(x["betrag"] or 0) for x in ungeplante_einnahmen)
     )
 
+    # Letzter Änderungszeitpunkt für diesen Monat
+    try:
+        last_modified_sql = text("""
+            SELECT MAX(ts) FROM (
+                SELECT MAX(updated_at) AS ts FROM monatswerte WHERE monat = :monat AND jahr = :jahr
+                UNION ALL
+                SELECT MAX(datum) AS ts FROM ungeplante_transaktionen WHERE monat = :monat AND jahr = :jahr
+                UNION ALL
+                SELECT MAX(updated_at) AS ts FROM kontostand_monatsende_ist WHERE monat = :monat AND jahr = :jahr
+            ) subq
+        """)
+        last_modified = db.execute(last_modified_sql, {"monat": monat, "jahr": jahr}).scalar()
+    except Exception:
+        db.rollback()
+        last_modified = None
+
     return {
         "monat": monat,
         "jahr": jahr,
@@ -653,6 +669,7 @@ FROM ungeplante_ausgaben
         "feste_einnahmen": feste_einnahmen,
         "gesamt_ausgaben": gesamt_ausgaben,
         "gesamt_einnahmen": gesamt_einnahmen,
+        "last_modified": last_modified,
     }
 
 
@@ -702,12 +719,12 @@ async def set_monatswert(ist_wert_data: dict, db: Session = Depends(get_db)):
     if count > 0:
         # Direktes Update für alle passenden Einträge
         db.query(Monatswert).filter_by(
-            eintrag_id=eintrag_id, 
-            monat=monat, 
-            jahr=jahr, 
+            eintrag_id=eintrag_id,
+            monat=monat,
+            jahr=jahr,
             kategorie=kategorie
-        ).update({"ist": ist_wert})
-    
+        ).update({"ist": ist_wert, "updated_at": datetime.now()})
+
         db.commit()
         return {"status": "updated", "count": count}
     else:
@@ -719,7 +736,8 @@ async def set_monatswert(ist_wert_data: dict, db: Session = Depends(get_db)):
             kategorie=kategorie,
             beschreibung=beschreibung,  # 🔹 Default: "Unbekannt"
             soll=soll,  # 🔹 Default: 0
-            ist=ist_wert
+            ist=ist_wert,
+            updated_at=datetime.now()
         )
         db.add(neuer_wert)
         db.commit()
