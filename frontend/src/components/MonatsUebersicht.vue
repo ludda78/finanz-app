@@ -174,18 +174,18 @@
     <thead>
       <tr>
         <th>Beschreibung</th>
-        <th>Soll-Kontostand</th>
+        <th>Soll</th>
         <th>Ist-Kontostand</th>
         <th>Abweichung</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td><strong>Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
+        <td><strong>Soll-Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
         <td><strong>{{ Number(sollKontostand).toFixed(2) }} €</strong></td>
         <td>
-          <input 
-            type="number" 
+          <input
+            type="number"
             step="0.01"
             v-model.number="istKontostand"
             @blur="speichereIstKontostand"
@@ -196,16 +196,35 @@
           <strong>{{ kontostandAbweichung }} €</strong>
         </td>
       </tr>
+      <tr>
+        <td><strong>Virtueller Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
+        <td><strong>{{ Number(virtuellerKontostandBetrag).toFixed(2) }} €</strong></td>
+        <td><strong>{{ istKontostand !== null ? Number(istKontostand).toFixed(2) + ' €' : '–' }}</strong></td>
+        <td :style="{ color: abweichungZuVirtuellem < 0 ? 'red' : 'green' }">
+          <strong>{{ Number(abweichungZuVirtuellem).toFixed(2) }} €</strong>
+        </td>
+      </tr>
     </tbody>
   </table>
-  
-  <!-- Zusätzliche Informationen -->
+
+  <!-- Zusammenfassung und Vormonat-Info -->
   <div class="kontostand-info" v-if="istKontostand !== null">
-    <p><strong>Monatssaldo (Soll):</strong> {{ monatssaldoSoll }} €</p>
-    <p><strong>Virtueller Kontostand Vormonat:</strong> {{ sollKontostandVormonat }} €</p>
-    <p v-if="kontostandAbweichung !== 0" :style="{ color: kontostandAbweichung < 0 ? 'red' : 'green' }">
+    <p :style="{ color: kontostandAbweichung < 0 ? 'red' : 'green' }">
       <strong>{{ kontostandAbweichung > 0 ? 'Plus' : 'Minus' }} von {{ Math.abs(kontostandAbweichung) }} € gegenüber Soll-Kontostand</strong>
     </p>
+    <p :style="{ color: abweichungZuVirtuellem < 0 ? 'red' : 'green' }">
+      <strong>{{ abweichungZuVirtuellem > 0 ? 'Plus' : 'Minus' }} von {{ Math.abs(Number(abweichungZuVirtuellem).toFixed(2)) }} € gegenüber virtuellem Kontostand</strong>
+    </p>
+    <template v-if="abweichungVormonatZuSoll !== null">
+      <hr style="margin: 10px 0; border-color: #dee2e6;">
+      <p><strong>Vormonat ({{ vormonatName }}):</strong></p>
+      <p :style="{ color: abweichungVormonatZuSoll < 0 ? 'red' : 'green' }">
+        Abweichung Ist zu Soll-Kontostand: {{ abweichungVormonatZuSoll > 0 ? '+' : '' }}{{ Number(abweichungVormonatZuSoll).toFixed(2) }} €
+      </p>
+      <p v-if="abweichungVormonatZuVirtuell !== null" :style="{ color: abweichungVormonatZuVirtuell < 0 ? 'red' : 'green' }">
+        Abweichung Ist zu virtuellem Kontostand: {{ abweichungVormonatZuVirtuell > 0 ? '+' : '' }}{{ Number(abweichungVormonatZuVirtuell).toFixed(2) }} €
+      </p>
+    </template>
   </div>
 </div>
     
@@ -346,9 +365,12 @@ export default {
       ungeplannteAusgaben: [],
       ungeplannteEinnahmen: [],
       lastModified: null,
-      sollKontostand: 0, // Wird vom Backend geladen
+      sollKontostand: 0,
       istKontostand: null,
-      sollKontostandVormonat: 0, // Wird bereits verwendet
+      sollKontostandVormonat: 0,
+      istKontostandVormonat: null,
+      virtuellerKontostandBetrag: 0,
+      virtuellerKontostandVormonat: 0,
       newAusgabe: {
         beschreibung: '',
         betrag: null,
@@ -482,6 +504,22 @@ export default {
       const ist = parseFloat(this.istKontostand) || 0;
       const soll = parseFloat(this.sollKontostand) || 0;
       return (ist - soll).toFixed(2);
+    },
+    abweichungZuVirtuellem() {
+      if (this.istKontostand === null || this.istKontostand === '') return 0;
+      return (parseFloat(this.istKontostand) - parseFloat(this.virtuellerKontostandBetrag)).toFixed(2);
+    },
+    vormonatName() {
+      const prevMonth = this.selectedMonth === 1 ? 12 : this.selectedMonth - 1;
+      return this.monate[prevMonth - 1];
+    },
+    abweichungVormonatZuSoll() {
+      if (this.istKontostandVormonat === null) return null;
+      return (parseFloat(this.istKontostandVormonat) - parseFloat(this.sollKontostandVormonat || 0)).toFixed(2);
+    },
+    abweichungVormonatZuVirtuell() {
+      if (this.istKontostandVormonat === null) return null;
+      return (parseFloat(this.istKontostandVormonat) - parseFloat(this.virtuellerKontostandVormonat || 0)).toFixed(2);
     },
   },
   created() {
@@ -808,6 +846,9 @@ export default {
 	},
 	
     async ladeKontostandDaten() {
+      const prevMonth = this.monat == 1 ? 12 : this.monat - 1;
+      const prevYear = this.monat == 1 ? this.jahr - 1 : this.jahr;
+
       try {
         // SOLL-Kontostand für aktuellen Monat laden
         const { data: sollData } = await api.get(
@@ -821,17 +862,53 @@ export default {
         );
         this.istKontostand = istData?.ist_kontostand ?? null;
 
-        console.log("Kontostand-Daten geladen:", {
-          soll: this.sollKontostand,
-          ist: this.istKontostand,
-        });
+        // Vormonat Soll-Kontostand laden
+        try {
+          const { data: sollVormonat } = await api.get(
+            `/soll-kontostaende/${prevYear}/${prevMonth}`
+          );
+          this.sollKontostandVormonat = sollVormonat?.kontostand_soll ?? 0;
+        } catch {
+          this.sollKontostandVormonat = 0;
+        }
+
+        // Vormonat Ist-Kontostand laden
+        try {
+          const { data: istVormonat } = await api.get(
+            `/kontostand-ist/${prevYear}/${prevMonth}`
+          );
+          this.istKontostandVormonat = istVormonat?.ist_kontostand ?? null;
+        } catch {
+          this.istKontostandVormonat = null;
+        }
+
+        // Virtueller Kontostand aus Jahresübersicht laden
+        try {
+          const { data: jahresData } = await api.get(`/jahresuebersicht/${this.jahr}`);
+          const monate = jahresData.monate || [];
+          this.virtuellerKontostandBetrag = monate[this.monat - 1]?.virtueller_kontostand ?? 0;
+          // Vormonat: wenn Januar, dann aus Vorjahr laden
+          if (this.monat > 1) {
+            this.virtuellerKontostandVormonat = monate[this.monat - 2]?.virtueller_kontostand ?? 0;
+          } else {
+            try {
+              const { data: vorjahrData } = await api.get(`/jahresuebersicht/${prevYear}`);
+              const vorjahrMonate = vorjahrData.monate || [];
+              this.virtuellerKontostandVormonat = vorjahrMonate[11]?.virtueller_kontostand ?? 0;
+            } catch {
+              this.virtuellerKontostandVormonat = 0;
+            }
+          }
+        } catch {
+          this.virtuellerKontostandBetrag = 0;
+          this.virtuellerKontostandVormonat = 0;
+        }
 
       } catch (error) {
         if (error.response && error.response.status === 404) {
-          // Fallback: neu berechnen, wenn keine Daten da
           await this.berechneSollKontostand();
           return;
-         }
+        }
         console.error("❌ Fehler beim Laden der Kontostand-Daten:", error);
         this.sollKontostand = 0;
         this.istKontostand = null;
