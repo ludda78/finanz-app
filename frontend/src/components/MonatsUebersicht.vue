@@ -58,10 +58,10 @@
 			</tr>
 			<tr class="summen-zeile">
 				<td><strong>Summe</strong></td>
-				<td><strong>{{ summeSoll }} €</strong></td>
-				<td><strong>{{ summeIst }} €</strong></td>
-				<td :style="{ color: summeAbweichung > 0 ? 'red' : 'green' }">
-				<strong>{{ summeAbweichung }} €</strong>
+				<td><strong>{{ berechneSummeSoll(ausgaben) }} €</strong></td>
+				<td><strong>{{ berechneSummeIst(ausgaben) }} €</strong></td>
+				<td :style="{ color: berechneSummeAbweichung(ausgaben) > 0 ? 'red' : 'green' }">
+				<strong>{{ berechneSummeAbweichung(ausgaben) }} €</strong>
 				</td>
 			</tr>
 			</tbody>
