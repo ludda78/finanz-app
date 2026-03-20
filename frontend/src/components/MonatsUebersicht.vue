@@ -530,8 +530,7 @@ export default {
     }
   },
   mounted() {
-    this.ladeMonatsUebersicht();
-	window.addEventListener("scroll", this.checkScroll);
+    window.addEventListener("scroll", this.checkScroll);
   },
    beforeUnmount() {
     window.removeEventListener("scroll", this.checkScroll);
@@ -963,11 +962,13 @@ export default {
 
   },
   watch: {
-    // Watch for route changes to reload data
-    $route(to) {
-      if (to.params.monat && to.params.jahr) {
-        this.selectedMonth = parseInt(to.params.monat);
-        this.selectedYear = parseInt(to.params.jahr);
+    $route: {
+      immediate: true,
+      handler(to) {
+        if (to.params.monat && to.params.jahr) {
+          this.selectedMonth = parseInt(to.params.monat);
+          this.selectedYear = parseInt(to.params.jahr);
+        }
         this.ladeMonatsUebersicht();
       }
     }
