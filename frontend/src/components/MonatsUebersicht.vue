@@ -58,10 +58,10 @@
 			</tr>
 			<tr class="summen-zeile">
 				<td><strong>Summe</strong></td>
-				<td><strong>{{ berechneSummeSoll(ausgaben) }} €</strong></td>
-				<td><strong>{{ berechneSummeIst(ausgaben) }} €</strong></td>
-				<td :style="{ color: berechneSummeAbweichung(ausgaben) > 0 ? 'red' : 'green' }">
-				<strong>{{ berechneSummeAbweichung(ausgaben) }} €</strong>
+				<td><strong>{{ kategorienSummenAusgaben[kategorie]?.soll }} €</strong></td>
+				<td><strong>{{ kategorienSummenAusgaben[kategorie]?.ist }} €</strong></td>
+				<td :style="{ color: kategorienSummenAusgaben[kategorie]?.abweichung > 0 ? 'red' : 'green' }">
+				<strong>{{ kategorienSummenAusgaben[kategorie]?.abweichung }} €</strong>
 				</td>
 			</tr>
 			</tbody>
@@ -113,10 +113,10 @@
           <!-- Summenzeile für jede Kategorie -->
           <tr class="summen-zeile">
             <td><strong>Summe {{ kategorie }}</strong></td>
-            <td><strong>{{ berechneSummeSoll(einnahmen) }} €</strong></td>
-            <td><strong>{{ berechneSummeIst(einnahmen) }} €</strong></td>
-            <td :style="{ color: berechneSummeAbweichung(einnahmen) < 0 ? 'red' : 'green' }">
-              <strong>{{ berechneSummeAbweichung(einnahmen) }} €</strong>
+            <td><strong>{{ kategorienSummenEinnahmen[kategorie]?.soll }} €</strong></td>
+            <td><strong>{{ kategorienSummenEinnahmen[kategorie]?.ist }} €</strong></td>
+            <td :style="{ color: kategorienSummenEinnahmen[kategorie]?.abweichung < 0 ? 'red' : 'green' }">
+              <strong>{{ kategorienSummenEinnahmen[kategorie]?.abweichung }} €</strong>
             </td>
           </tr>
         </tbody>
@@ -461,6 +461,34 @@ export default {
       });
       return sortiert;
     },
+    kategorienSummenAusgaben() {
+      const result = {};
+      for (const [kategorie, items] of Object.entries(this.gruppiertFesteAusgaben)) {
+        const soll = items.reduce((s, i) => s + (parseFloat(i.betrag) || 0), 0);
+        const ist  = items.reduce((s, i) => s + (parseFloat(i.ist_wert) || 0), 0);
+        result[kategorie] = {
+          soll: soll.toFixed(2),
+          ist:  ist.toFixed(2),
+          abweichung: (ist - soll).toFixed(2),
+        };
+      }
+      return result;
+    },
+
+    kategorienSummenEinnahmen() {
+      const result = {};
+      for (const [kategorie, items] of Object.entries(this.gruppiertFesteEinnahmen)) {
+        const soll = items.reduce((s, i) => s + (parseFloat(i.betrag) || 0), 0);
+        const ist  = items.reduce((s, i) => s + (parseFloat(i.ist_wert) || 0), 0);
+        result[kategorie] = {
+          soll: soll.toFixed(2),
+          ist:  ist.toFixed(2),
+          abweichung: (ist - soll).toFixed(2),
+        };
+      }
+      return result;
+    },
+
     // Your existing computed properties remain unchanged
     summeFesteAusgabenSoll() {
       return this.festeAusgaben.reduce((sum, ausgabe) => sum + ausgabe.betrag, 0).toFixed(2);
