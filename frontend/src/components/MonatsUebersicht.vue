@@ -30,7 +30,7 @@
 
     <h2>Feste Ausgaben</h2>
     <!-- Gruppiere feste Ausgaben nach Kategorie -->
-    <div v-for="(ausgaben, kategorie) in gruppiertFesteAusgaben" :key="'ausgaben-'+kategorie">
+    <div v-for="(gruppe, kategorie) in gruppiertFesteAusgaben" :key="'ausgaben-'+kategorie">
       <h3>{{ kategorie }}</h3>
       <table>
           <thead>
@@ -42,7 +42,7 @@
 			</tr>
 			</thead>
 			<tbody>
-			<tr v-for="ausgabe in ausgaben" :key="ausgabe.id">
+			<tr v-for="ausgabe in gruppe.items" :key="ausgabe.id">
 				<td>{{ ausgabe.beschreibung }}</td>
 				<td>{{ ausgabe.betrag }} €</td>
 				<td>
@@ -58,10 +58,10 @@
 			</tr>
 			<tr class="summen-zeile">
 				<td><strong>Summe</strong></td>
-				<td><strong>{{ kategorienSummenAusgaben[kategorie]?.soll }} €</strong></td>
-				<td><strong>{{ kategorienSummenAusgaben[kategorie]?.ist }} €</strong></td>
-				<td :style="{ color: kategorienSummenAusgaben[kategorie]?.abweichung > 0 ? 'red' : 'green' }">
-				<strong>{{ kategorienSummenAusgaben[kategorie]?.abweichung }} €</strong>
+				<td><strong>{{ gruppe.summeSoll }} €</strong></td>
+				<td><strong>{{ gruppe.summeIst }} €</strong></td>
+				<td :style="{ color: gruppe.summeAbweichung > 0 ? 'red' : 'green' }">
+				<strong>{{ gruppe.summeAbweichung }} €</strong>
 				</td>
 			</tr>
 			</tbody>
@@ -84,7 +84,7 @@
 
     <h2>Feste Einnahmen</h2>
     <!-- Gruppiere feste Einnahmen nach Kategorie -->
-    <div v-for="(einnahmen, kategorie) in gruppiertFesteEinnahmen" :key="'einnahmen-'+kategorie">
+    <div v-for="(gruppe, kategorie) in gruppiertFesteEinnahmen" :key="'einnahmen-'+kategorie">
       <h3>{{ kategorie }}</h3>
       <table>
         <thead>
@@ -96,7 +96,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="einnahme in einnahmen" :key="einnahme.id">
+          <tr v-for="einnahme in gruppe.items" :key="einnahme.id">
             <td>{{ einnahme.beschreibung }}</td>
             <td>{{ einnahme.betrag }} €</td>
             <td>
@@ -113,10 +113,10 @@
           <!-- Summenzeile für jede Kategorie -->
           <tr class="summen-zeile">
             <td><strong>Summe {{ kategorie }}</strong></td>
-            <td><strong>{{ kategorienSummenEinnahmen[kategorie]?.soll }} €</strong></td>
-            <td><strong>{{ kategorienSummenEinnahmen[kategorie]?.ist }} €</strong></td>
-            <td :style="{ color: kategorienSummenEinnahmen[kategorie]?.abweichung < 0 ? 'red' : 'green' }">
-              <strong>{{ kategorienSummenEinnahmen[kategorie]?.abweichung }} €</strong>
+            <td><strong>{{ gruppe.summeSoll }} €</strong></td>
+            <td><strong>{{ gruppe.summeIst }} €</strong></td>
+            <td :style="{ color: gruppe.summeAbweichung < 0 ? 'red' : 'green' }">
+              <strong>{{ gruppe.summeAbweichung }} €</strong>
             </td>
           </tr>
         </tbody>
@@ -409,84 +409,47 @@ export default {
     gruppiertFesteAusgaben() {
       const gruppiert = {};
       this.festeAusgaben.forEach(ausgabe => {
-        // Fallback-Kategorie, falls keine vorhanden ist
         const kategorie = ausgabe.kategorie || 'Sonstige';
-        
         if (!gruppiert[kategorie]) {
-          gruppiert[kategorie] = [];
+          gruppiert[kategorie] = { items: [], summeSoll: 0, summeIst: 0 };
         }
-        gruppiert[kategorie].push(ausgabe);
+        gruppiert[kategorie].items.push(ausgabe);
+        gruppiert[kategorie].summeSoll += parseFloat(ausgabe.betrag) || 0;
+        gruppiert[kategorie].summeIst  += parseFloat(ausgabe.ist_wert) || 0;
       });
-      // Erstellt ein neues Objekt mit sortierter Reihenfolge
+      for (const kat of Object.keys(gruppiert)) {
+        const g = gruppiert[kat];
+        g.summeAbweichung = (g.summeIst - g.summeSoll).toFixed(2);
+        g.summeSoll = g.summeSoll.toFixed(2);
+        g.summeIst  = g.summeIst.toFixed(2);
+      }
       const sortiert = {};
-      // Zuerst die definierten Kategorien in der gewünschten Reihenfolge
-      this.kategorienReihenfolge.forEach(kategorie => {
-        if (gruppiert[kategorie]) {
-          sortiert[kategorie] = gruppiert[kategorie];
-        }
-      });
-      // Dann alle übrigen Kategorien, die nicht in der Reihenfolge definiert sind
-      Object.keys(gruppiert).forEach(kategorie => {
-        if (!sortiert[kategorie]) {
-          sortiert[kategorie] = gruppiert[kategorie];
-        }
-      });
+      this.kategorienReihenfolge.forEach(k => { if (gruppiert[k]) sortiert[k] = gruppiert[k]; });
+      Object.keys(gruppiert).forEach(k => { if (!sortiert[k]) sortiert[k] = gruppiert[k]; });
       return sortiert;
     },
-    
+
     gruppiertFesteEinnahmen() {
       const gruppiert = {};
       this.festeEinnahmen.forEach(einnahme => {
-        // Fallback-Kategorie, falls keine vorhanden ist
         const kategorie = einnahme.kategorie || 'Sonstige';
-        
         if (!gruppiert[kategorie]) {
-          gruppiert[kategorie] = [];
+          gruppiert[kategorie] = { items: [], summeSoll: 0, summeIst: 0 };
         }
-        gruppiert[kategorie].push(einnahme);
+        gruppiert[kategorie].items.push(einnahme);
+        gruppiert[kategorie].summeSoll += parseFloat(einnahme.betrag) || 0;
+        gruppiert[kategorie].summeIst  += parseFloat(einnahme.ist_wert) || 0;
       });
-		// Erstellt ein neues Objekt mit sortierter Reihenfolge
+      for (const kat of Object.keys(gruppiert)) {
+        const g = gruppiert[kat];
+        g.summeAbweichung = (g.summeIst - g.summeSoll).toFixed(2);
+        g.summeSoll = g.summeSoll.toFixed(2);
+        g.summeIst  = g.summeIst.toFixed(2);
+      }
       const sortiert = {};
-      // Zuerst die definierten Kategorien in der gewünschten Reihenfolge
-      this.kategorienReihenfolge.forEach(kategorie => {
-        if (gruppiert[kategorie]) {
-          sortiert[kategorie] = gruppiert[kategorie];
-        }
-      });
-      // Dann alle übrigen Kategorien, die nicht in der Reihenfolge definiert sind
-      Object.keys(gruppiert).forEach(kategorie => {
-        if (!sortiert[kategorie]) {
-          sortiert[kategorie] = gruppiert[kategorie];
-        }
-      });
+      this.kategorienReihenfolge.forEach(k => { if (gruppiert[k]) sortiert[k] = gruppiert[k]; });
+      Object.keys(gruppiert).forEach(k => { if (!sortiert[k]) sortiert[k] = gruppiert[k]; });
       return sortiert;
-    },
-    kategorienSummenAusgaben() {
-      const result = {};
-      for (const [kategorie, items] of Object.entries(this.gruppiertFesteAusgaben)) {
-        const soll = items.reduce((s, i) => s + (parseFloat(i.betrag) || 0), 0);
-        const ist  = items.reduce((s, i) => s + (parseFloat(i.ist_wert) || 0), 0);
-        result[kategorie] = {
-          soll: soll.toFixed(2),
-          ist:  ist.toFixed(2),
-          abweichung: (ist - soll).toFixed(2),
-        };
-      }
-      return result;
-    },
-
-    kategorienSummenEinnahmen() {
-      const result = {};
-      for (const [kategorie, items] of Object.entries(this.gruppiertFesteEinnahmen)) {
-        const soll = items.reduce((s, i) => s + (parseFloat(i.betrag) || 0), 0);
-        const ist  = items.reduce((s, i) => s + (parseFloat(i.ist_wert) || 0), 0);
-        result[kategorie] = {
-          soll: soll.toFixed(2),
-          ist:  ist.toFixed(2),
-          abweichung: (ist - soll).toFixed(2),
-        };
-      }
-      return result;
     },
 
     // Your existing computed properties remain unchanged
