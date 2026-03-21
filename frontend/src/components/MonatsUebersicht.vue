@@ -530,6 +530,7 @@ export default {
     }
   },
   mounted() {
+    this.ladeMonatsUebersicht();
     window.addEventListener("scroll", this.checkScroll);
   },
    beforeUnmount() {
@@ -790,12 +791,14 @@ export default {
       this.newEinnahme.betrag = ausgabe.betrag;
     },
 	
-	berechneSummeSoll(items) {
-      return items.reduce((sum, item) => sum + item.betrag, 0).toFixed(2);
+    berechneSummeSoll(items) {
+      if (!items || !items.length) return '0.00';
+      return items.reduce((sum, item) => sum + (parseFloat(item.betrag) || 0), 0).toFixed(2);
     },
 
     berechneSummeIst(items) {
-       return items.reduce((sum, item) => sum + (item.ist_wert || 0), 0).toFixed(2);
+      if (!items || !items.length) return '0.00';
+      return items.reduce((sum, item) => sum + (parseFloat(item.ist_wert) || 0), 0).toFixed(2);
     },
 
     berechneSummeAbweichung(items) {
@@ -962,13 +965,10 @@ export default {
 
   },
   watch: {
-    $route: {
-      immediate: true,
-      handler(to) {
-        if (to.params.monat && to.params.jahr) {
-          this.selectedMonth = parseInt(to.params.monat);
-          this.selectedYear = parseInt(to.params.jahr);
-        }
+    $route(to) {
+      if (to.params.monat && to.params.jahr) {
+        this.selectedMonth = parseInt(to.params.monat);
+        this.selectedYear = parseInt(to.params.jahr);
         this.ladeMonatsUebersicht();
       }
     }
