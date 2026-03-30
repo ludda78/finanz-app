@@ -151,7 +151,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><strong>Einnahmen - Ausgaben</strong></td>
+            <td><strong title="Differenz von Soll und Ist (jeweils Gesamteinnahmen - Gesamtausgaben)" class="tooltip-hint">Einnahmen - Ausgaben</strong></td>
             <td><strong>{{ gesamtbilanzSoll }} €</strong></td>
             <td><strong>{{ gesamtbilanzIst }} €</strong></td>
             <td :style="{ color: gesamtbilanzAbweichung < 0 ? 'red' : 'green' }">
@@ -181,7 +181,7 @@
     </thead>
     <tbody>
       <tr>
-        <td><strong>Soll-Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
+        <td><strong title="Der Kontostand, den das Konto am Ende des Monats haben muss, um am Ende des Jahres bei 0 rauszukommen. Mathematisch: die Summe der Abweichungen von Monatsausgaben zum Monatsausgabenmittel." class="tooltip-hint">Soll-Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
         <td><strong>{{ Number(sollKontostand).toFixed(2) }} €</strong></td>
         <td>
           <input
@@ -197,7 +197,7 @@
         </td>
       </tr>
       <tr>
-        <td><strong>Virtueller Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
+        <td><strong title="Der Kontostand, den das Konto am Ende des Monats haben sollte, um am Ende des Jahres exakt das Zwölffache der Differenz vom Mittel der Monatseinnahmen und Monatsausgaben zu haben. Oder: die Summe der Differenzen von Monatseinnahmen und Ausgaben." class="tooltip-hint">Virtueller Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
         <td><strong>{{ Number(virtuellerKontostandBetrag).toFixed(2) }} €</strong></td>
         <td><strong>{{ istKontostand !== null ? Number(istKontostand).toFixed(2) + ' €' : '–' }}</strong></td>
         <td :style="{ color: abweichungZuVirtuellem < 0 ? 'red' : 'green' }">
@@ -206,6 +206,26 @@
       </tr>
     </tbody>
   </table>
+
+  <!-- Hinweis: offene ungeplante Ausgaben -->
+  <div class="kontostand-hinweis" v-if="summeNichtAusgeglicheneAusgaben > 0">
+    <p><strong>Offene ungeplante Ausgaben: {{ Number(summeNichtAusgeglicheneAusgaben).toFixed(2) }} €</strong> — noch nicht in Soll- oder virtuellem Kontostand berücksichtigt</p>
+    <template v-if="abweichungZuSollNachAusgleich !== null">
+      <p style="margin-top: 8px;"><strong>Bei komplettem Ausgleich (Ist {{ Number(istKontostand).toFixed(2) }} € + {{ Number(summeNichtAusgeglicheneAusgaben).toFixed(2) }} €):</strong></p>
+      <p :style="{ color: abweichungZuSollNachAusgleich < 0 ? 'red' : 'green' }">
+        Abweichung zu Soll-Kontostand: {{ abweichungZuSollNachAusgleich > 0 ? '+' : '' }}{{ abweichungZuSollNachAusgleich }} €
+        <span v-if="veraenderungSollNachAusgleichZuVormonat !== null" style="color: gray; font-weight: normal;">
+          ({{ veraenderungSollNachAusgleichZuVormonat > 0 ? '+' : '' }}{{ veraenderungSollNachAusgleichZuVormonat }} € ggü. {{ vormonatName }})
+        </span>
+      </p>
+      <p :style="{ color: abweichungZuVirtuellNachAusgleich < 0 ? 'red' : 'green' }">
+        Abweichung zu virtuellem Kontostand: {{ abweichungZuVirtuellNachAusgleich > 0 ? '+' : '' }}{{ abweichungZuVirtuellNachAusgleich }} €
+        <span v-if="veraenderungVirtuellNachAusgleichZuVormonat !== null" style="color: gray; font-weight: normal;">
+          ({{ veraenderungVirtuellNachAusgleichZuVormonat > 0 ? '+' : '' }}{{ veraenderungVirtuellNachAusgleichZuVormonat }} € ggü. {{ vormonatName }})
+        </span>
+      </p>
+    </template>
+  </div>
 
   <!-- Zusammenfassung und Vormonat-Info -->
   <div class="kontostand-info" v-if="istKontostand !== null">
@@ -511,6 +531,31 @@ export default {
     abweichungVormonatZuVirtuell() {
       if (this.istKontostandVormonat === null) return null;
       return (parseFloat(this.istKontostandVormonat) - parseFloat(this.virtuellerKontostandVormonat || 0)).toFixed(2);
+    },
+    summeNichtAusgeglicheneAusgaben() {
+      return this.ungeplannteAusgaben
+        .filter(a => a.status === 'nicht_ausgeglichen')
+        .reduce((sum, a) => sum + (parseFloat(a.betrag) || 0), 0);
+    },
+    istNachAusgleich() {
+      if (this.istKontostand === null || this.istKontostand === '') return null;
+      return parseFloat(this.istKontostand) + this.summeNichtAusgeglicheneAusgaben;
+    },
+    abweichungZuSollNachAusgleich() {
+      if (this.istNachAusgleich === null) return null;
+      return (this.istNachAusgleich - parseFloat(this.sollKontostand)).toFixed(2);
+    },
+    abweichungZuVirtuellNachAusgleich() {
+      if (this.istNachAusgleich === null) return null;
+      return (this.istNachAusgleich - parseFloat(this.virtuellerKontostandBetrag)).toFixed(2);
+    },
+    veraenderungSollNachAusgleichZuVormonat() {
+      if (this.abweichungZuSollNachAusgleich === null || this.abweichungVormonatZuSoll === null) return null;
+      return (parseFloat(this.abweichungZuSollNachAusgleich) - parseFloat(this.abweichungVormonatZuSoll)).toFixed(2);
+    },
+    veraenderungVirtuellNachAusgleichZuVormonat() {
+      if (this.abweichungZuVirtuellNachAusgleich === null || this.abweichungVormonatZuVirtuell === null) return null;
+      return (parseFloat(this.abweichungZuVirtuellNachAusgleich) - parseFloat(this.abweichungVormonatZuVirtuell)).toFixed(2);
     },
   },
   created() {
@@ -1164,6 +1209,20 @@ input[type="number"] {
   box-shadow: 0 0 5px rgba(0,123,255,0.3);
 }
 
+.kontostand-hinweis {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #856404;
+}
+
+.hinweis-text {
+  font-weight: normal;
+}
+
 .kontostand-info {
   margin-top: 15px;
   padding: 15px;
@@ -1245,6 +1304,11 @@ input[type="number"] {
 }
 .scroll-top-btn:hover {
   background-color: #157347;
+}
+
+.tooltip-hint {
+  cursor: help;
+  border-bottom: 1px dotted #666;
 }
 .scroll-top-btn[style*="display: none"] {
   opacity: 0;
