@@ -175,8 +175,10 @@
       <tr>
         <th>Beschreibung</th>
         <th>Soll</th>
-        <th>Ist-Kontostand</th>
+        <th>Ist aktuell</th>
         <th>Abweichung</th>
+        <th>Ist Monatsende</th>
+        <th>Abweichung Monatsende</th>
       </tr>
     </thead>
     <tbody>
@@ -195,6 +197,17 @@
         <td :style="{ color: kontostandAbweichung < 0 ? 'red' : 'green' }">
           <strong>{{ kontostandAbweichung }} €</strong>
         </td>
+        <td>
+          <strong v-if="voraussichtlicherKontostand !== null">{{ Number(voraussichtlicherKontostand).toFixed(2) }} €</strong>
+          <span v-else>–</span>
+        </td>
+        <td>
+          <strong v-if="abweichungMonatsendeSoll !== null"
+            :style="{ color: abweichungMonatsendeSoll < 0 ? 'red' : 'green' }">
+            {{ abweichungMonatsendeSoll > 0 ? '+' : '' }}{{ abweichungMonatsendeSoll }} €
+          </strong>
+          <span v-else>–</span>
+        </td>
       </tr>
       <tr>
         <td><strong title="Der Kontostand, den das Konto am Ende des Monats haben sollte, um am Ende des Jahres exakt das Zwölffache der Differenz vom Mittel der Monatseinnahmen und Monatsausgaben zu haben. Oder: die Summe der Differenzen von Monatseinnahmen und Ausgaben." class="tooltip-hint">Virtueller Kontostand Ende {{ monate[selectedMonth - 1] }}</strong></td>
@@ -202,6 +215,17 @@
         <td><strong>{{ istKontostand !== null ? Number(istKontostand).toFixed(2) + ' €' : '–' }}</strong></td>
         <td :style="{ color: abweichungZuVirtuellem < 0 ? 'red' : 'green' }">
           <strong>{{ Number(abweichungZuVirtuellem).toFixed(2) }} €</strong>
+        </td>
+        <td>
+          <strong v-if="voraussichtlicherKontostand !== null">{{ Number(voraussichtlicherKontostand).toFixed(2) }} €</strong>
+          <span v-else>–</span>
+        </td>
+        <td>
+          <strong v-if="abweichungMonatsendeVirtuell !== null"
+            :style="{ color: abweichungMonatsendeVirtuell < 0 ? 'red' : 'green' }">
+            {{ abweichungMonatsendeVirtuell > 0 ? '+' : '' }}{{ abweichungMonatsendeVirtuell }} €
+          </strong>
+          <span v-else>–</span>
         </td>
       </tr>
     </tbody>
@@ -249,7 +273,7 @@
 </div>
     
     <!-- Ungeplante Transaktionen -->
-    <div class="ungeplante-transaktionen">
+    <div class="ungeplante-transaktionen" ref="ungeplante">
       <h2>Ungeplante Transaktionen</h2>
       
       <div class="row">
@@ -354,11 +378,18 @@
         </div>
       </div>
       <!-- Scroll-to-Top Button -->
-      <button 
+      <button
         v-show="showScrollTop"
         @click="scrollToTop"
         class="scroll-top-btn">
         ↑ Nach oben
+      </button>
+      <!-- Scroll-to-Ungeplante Button -->
+      <button
+        @click="scrollToUngeplante"
+        class="scroll-ungeplante-btn"
+        title="Zu ungeplanten Ausgaben springen">
+        ↓ Ungeplant
       </button>
     </div>
   </div>
@@ -531,6 +562,20 @@ export default {
     abweichungVormonatZuVirtuell() {
       if (this.istKontostandVormonat === null) return null;
       return (parseFloat(this.istKontostandVormonat) - parseFloat(this.virtuellerKontostandVormonat || 0)).toFixed(2);
+    },
+    voraussichtlicherKontostand() {
+      if (this.istKontostand === null || this.istKontostand === '') return null;
+      const restAusgaben = parseFloat(this.summeFesteAusgabenSoll) - parseFloat(this.summeFesteAusgabenIst);
+      const restEinnahmen = parseFloat(this.summeFesteEinnahmenSoll) - parseFloat(this.summeFesteEinnahmenIst);
+      return (parseFloat(this.istKontostand) - restAusgaben + restEinnahmen).toFixed(2);
+    },
+    abweichungMonatsendeSoll() {
+      if (this.voraussichtlicherKontostand === null) return null;
+      return (parseFloat(this.voraussichtlicherKontostand) - parseFloat(this.sollKontostand)).toFixed(2);
+    },
+    abweichungMonatsendeVirtuell() {
+      if (this.voraussichtlicherKontostand === null) return null;
+      return (parseFloat(this.voraussichtlicherKontostand) - parseFloat(this.virtuellerKontostandBetrag)).toFixed(2);
     },
     summeNichtAusgeglicheneAusgaben() {
       return this.ungeplannteAusgaben
@@ -993,10 +1038,13 @@ export default {
     }
   },
   checkScroll() {
-      this.showScrollTop = window.scrollY > 300; // ab 300px sichtbar
+      this.showScrollTop = window.scrollY > 300;
     },
     scrollToTop() {
       window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    scrollToUngeplante() {
+      this.$refs.ungeplante.scrollIntoView({ behavior: "smooth" });
     },
 
   },
@@ -1194,6 +1242,24 @@ input[type="number"] {
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+.kontostand-section th:nth-child(1),
+.kontostand-section td:nth-child(1) { width: 28%; }
+
+.kontostand-section th:nth-child(2),
+.kontostand-section td:nth-child(2) { width: 12%; text-align: right; }
+
+.kontostand-section th:nth-child(3),
+.kontostand-section td:nth-child(3) { width: 14%; text-align: right; }
+
+.kontostand-section th:nth-child(4),
+.kontostand-section td:nth-child(4) { width: 14%; text-align: right; }
+
+.kontostand-section th:nth-child(5),
+.kontostand-section td:nth-child(5) { width: 14%; text-align: right; }
+
+.kontostand-section th:nth-child(6),
+.kontostand-section td:nth-child(6) { width: 18%; text-align: right; }
+
 .kontostand-section input[type="number"] {
   width: 120px;
   padding: 8px;
@@ -1290,7 +1356,7 @@ input[type="number"] {
   position: fixed;
   bottom: 30px;
   right: 30px;
-  background-color: #198754; /* Bootstrap grün */
+  background-color: #198754;
   color: white;
   border: none;
   border-radius: 50%;
@@ -1304,6 +1370,25 @@ input[type="number"] {
 }
 .scroll-top-btn:hover {
   background-color: #157347;
+}
+
+.scroll-ungeplante-btn {
+  position: fixed;
+  bottom: 90px;
+  right: 22px;
+  background-color: #0d6efd;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 1000;
+  white-space: nowrap;
+}
+.scroll-ungeplante-btn:hover {
+  background-color: #0b5ed7;
 }
 
 .tooltip-hint {
