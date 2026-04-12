@@ -165,7 +165,7 @@
 	<!-- Kontostand-Abschnitt (nach der Gesamtbilanz einfügen) -->
 <div class="kontostand-section">
    <div style="display: flex; justify-content: space-between; align-items: center;">
-    <h2>Kontostand</h2>
+    <h2 class="tooltip-hint" title="Soll-Kontostand: Kontostand, den das Konto am Monatsende haben muss, damit du aufs Jahr gesehen auf ±0 rauskommst. Virtueller Kontostand: Idealer Kontostand wenn jeder Monat gleich teuer wäre. Ist Monatsende: Voraussichtlicher Kontostand am Monatsende (aktueller IST minus noch offene Ausgaben plus noch offene Einnahmen). Abweichung Monatsende: Vergleich des voraussichtlichen Endes mit dem Zielwert.">Kontostand</h2>
     <button @click="berechneSollKontostand" class="btn-recalculate">
       Soll-Kontostand neu berechnen
     </button>
@@ -235,7 +235,7 @@
   <div class="kontostand-hinweis" v-if="summeNichtAusgeglicheneAusgaben > 0">
     <p><strong>Offene ungeplante Ausgaben: {{ Number(summeNichtAusgeglicheneAusgaben).toFixed(2) }} €</strong> — noch nicht in Soll- oder virtuellem Kontostand berücksichtigt</p>
     <template v-if="abweichungZuSollNachAusgleich !== null">
-      <p style="margin-top: 8px;"><strong>Bei komplettem Ausgleich (Ist {{ Number(istKontostand).toFixed(2) }} € + {{ Number(summeNichtAusgeglicheneAusgaben).toFixed(2) }} €):</strong></p>
+      <p style="margin-top: 8px;"><strong>Bei komplettem Ausgleich (Ist Monatsende {{ Number(voraussichtlicherKontostand).toFixed(2) }} € + {{ Number(summeNichtAusgeglicheneAusgaben).toFixed(2) }} €):</strong></p>
       <p :style="{ color: abweichungZuSollNachAusgleich < 0 ? 'red' : 'green' }">
         Abweichung zu Soll-Kontostand: {{ abweichungZuSollNachAusgleich > 0 ? '+' : '' }}{{ abweichungZuSollNachAusgleich }} €
         <span v-if="veraenderungSollNachAusgleichZuVormonat !== null" style="color: gray; font-weight: normal;">
@@ -583,8 +583,8 @@ export default {
         .reduce((sum, a) => sum + (parseFloat(a.betrag) || 0), 0);
     },
     istNachAusgleich() {
-      if (this.istKontostand === null || this.istKontostand === '') return null;
-      return parseFloat(this.istKontostand) + this.summeNichtAusgeglicheneAusgaben;
+      if (this.voraussichtlicherKontostand === null) return null;
+      return parseFloat(this.voraussichtlicherKontostand) + this.summeNichtAusgeglicheneAusgaben;
     },
     abweichungZuSollNachAusgleich() {
       if (this.istNachAusgleich === null) return null;
