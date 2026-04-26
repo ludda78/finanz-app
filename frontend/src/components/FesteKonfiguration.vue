@@ -1020,7 +1020,7 @@ export default {
         const url = (this.selectedItem.typ === 'ausgabe')
         ? `/${apiUrlAusgabeChangesBase}/aenderungen/${row.id}`
         : `/${apiUrlEinnahmeChangesBase}/aenderungen/${row.id}`;
-        await api.delete(`/${url}`);
+        await api.delete(url);
         await this.loadChanges();
       } catch (e) {
         console.error('Löschen fehlgeschlagen', e);
