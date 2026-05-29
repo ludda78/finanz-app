@@ -2,19 +2,25 @@
   <div class="konfiguration-container">
     <h1>Konfiguration fester Posten</h1>
     
-    <!-- Tabs für Ausgaben/Einnahmen -->
+    <!-- Tabs für Ausgaben/Einnahmen/Verlauf -->
     <div class="tabs">
-      <button 
-        :class="{ active: activeTab === 'ausgaben' }" 
+      <button
+        :class="{ active: activeTab === 'ausgaben' }"
         @click="activeTab = 'ausgaben'"
       >
         Feste Ausgaben
       </button>
-      <button 
-        :class="{ active: activeTab === 'einnahmen' }" 
+      <button
+        :class="{ active: activeTab === 'einnahmen' }"
         @click="activeTab = 'einnahmen'"
       >
         Feste Einnahmen
+      </button>
+      <button
+        :class="{ active: activeTab === 'verlauf' }"
+        @click="activeTab = 'verlauf'; ladeVerlauf()"
+      >
+        Verlauf
       </button>
     </div>
     
@@ -410,6 +416,41 @@
         </div>
       </div>
     </div>
+    <!-- Verlauf-Tab -->
+    <div v-if="activeTab === 'verlauf'" class="tab-content">
+      <h2>Verlauf</h2>
+      <div v-if="verlaufLoading" class="text-muted">Lade Verlauf…</div>
+      <div v-else-if="verlauf.length === 0" class="text-muted">Keine Einträge vorhanden.</div>
+      <table v-else class="verlauf-tabelle">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Typ</th>
+            <th>Ereignis</th>
+            <th>Bezeichnung</th>
+            <th class="text-end">Betrag</th>
+            <th>Kategorie</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(eintrag, idx) in verlauf" :key="idx" :class="verlaufZeilenklasse(eintrag)">
+            <td>{{ formatDatum(eintrag.datum) }}</td>
+            <td>{{ eintrag.typ === 'ausgabe' ? 'Ausgabe' : 'Einnahme' }}</td>
+            <td>
+              <span v-if="eintrag.aktion === 'erstellt'">➕ Neu</span>
+              <span v-else-if="eintrag.aktion === 'aenderung'">✏️ Änderung</span>
+              <span v-else-if="eintrag.aktion === 'endet'">✅ Endet</span>
+            </td>
+            <td>{{ eintrag.beschreibung }}</td>
+            <td class="text-end">{{ Number(eintrag.betrag).toFixed(2) }} €</td>
+            <td>{{ eintrag.kategorie }}</td>
+            <td class="text-muted">{{ eintrag.details }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- Modal: Änderungen einer festen Position -->
     <div v-if="showChangesModal" class="modal">
       <div class="modal-content">
@@ -486,6 +527,8 @@ export default {
 		vierteljahrStartmonat: 1,
 		editVierteljahrStartmonat: 1,
       activeTab: "ausgaben",
+      verlauf: [],
+      verlaufLoading: false,
       festeAusgaben: [],
       festeEinnahmen: [],
       showNeueAusgabeForm: false,
@@ -1027,6 +1070,30 @@ export default {
         alert(e?.response?.data?.detail || e.message || 'Fehler beim Löschen');
       }
     },
+
+    async ladeVerlauf() {
+      this.verlaufLoading = true;
+      try {
+        const { data } = await api.get('/feste-posten-verlauf');
+        this.verlauf = data;
+      } catch (e) {
+        alert('Verlauf konnte nicht geladen werden: ' + (e.message || e));
+      } finally {
+        this.verlaufLoading = false;
+      }
+    },
+
+    verlaufZeilenklasse(eintrag) {
+      if (eintrag.aktion === 'erstellt') return 'verlauf-neu';
+      if (eintrag.aktion === 'endet')   return 'verlauf-endet';
+      return '';
+    },
+
+    formatDatum(iso) {
+      if (!iso) return '–';
+      const [y, m, d] = iso.split('-');
+      return `${d}.${m}.${y}`;
+    },
   },
   
 watch: {
@@ -1151,4 +1218,22 @@ watch: {
 
 .table-sm input.form-control-sm { height: 32px; padding: 2px 6px; }
 
+.verlauf-tabelle {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.verlauf-tabelle th,
+.verlauf-tabelle td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #dee2e6;
+}
+.verlauf-tabelle th {
+  background: #f8f9fa;
+  font-weight: 600;
+}
+.verlauf-neu { background-color: #fff0f0; }
+.verlauf-endet { background-color: #f0fff0; }
+.verlauf-tabelle .text-end { text-align: right; }
+.verlauf-tabelle .text-muted { color: #6c757d; font-size: 12px; }
 </style>

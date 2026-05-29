@@ -48,6 +48,8 @@
                       v-for="(betrag, idx) in werte.monate"
                       :key="idx"
                       class="text-end"
+                      :style="werte.zellstatus[idx] === 'start' ? { backgroundColor: '#ffd6d6' } : werte.zellstatus[idx] === 'end' ? { backgroundColor: '#d6f5d6' } : {}"
+                      :title="werte.zellstatus[idx] === 'start' ? 'Neuer Posten ab diesem Monat' : werte.zellstatus[idx] === 'end' ? 'Posten endet in diesem Monat' : ''"
                     >
                       {{ formatCurrency(betrag) }}
                     </td>
@@ -107,6 +109,8 @@
                       v-for="(betrag, idx) in werte.monate"
                       :key="idx"
                       class="text-end"
+                      :style="werte.zellstatus[idx] === 'start' ? { backgroundColor: '#ffd6d6' } : werte.zellstatus[idx] === 'end' ? { backgroundColor: '#d6f5d6' } : {}"
+                      :title="werte.zellstatus[idx] === 'start' ? 'Neuer Posten ab diesem Monat' : werte.zellstatus[idx] === 'end' ? 'Posten endet in diesem Monat' : ''"
                     >
                       {{ formatCurrency(betrag) }}
                     </td>
@@ -290,21 +294,28 @@ export default {
       const monatIndex = monatObj.monat - 1;
 
       monatObj.ausgaben.forEach((a) => {
-        // Kategorie erzeugen
         if (!matrix[a.kategorie]) matrix[a.kategorie] = {};
         const kat = matrix[a.kategorie];
-
-        // Beschreibung erzeugen
         if (!kat[a.beschreibung]) {
           kat[a.beschreibung] = {
             monate: Array(12).fill(0),
+            zellstatus: Array(12).fill(null),
             summe: 0,
             durchschnitt: 0,
           };
         }
-
-        // Wert eintragen
         kat[a.beschreibung].monate[monatIndex] = a.betrag;
+        // Startmonat dieses Jahr → rot; Endmonat dieses Jahr → grün
+        if (a.startdatum) {
+          const sd = new Date(a.startdatum);
+          if (sd.getFullYear() === this.jahr && sd.getMonth() === monatIndex)
+            kat[a.beschreibung].zellstatus[monatIndex] = 'start';
+        }
+        if (a.enddatum) {
+          const ed = new Date(a.enddatum);
+          if (ed.getFullYear() === this.jahr && ed.getMonth() === monatIndex)
+            kat[a.beschreibung].zellstatus[monatIndex] = 'end';
+        }
       });
     });
 
@@ -347,22 +358,28 @@ export default {
       if (!monatObj.einnahmen) return;
 
       monatObj.einnahmen.forEach((e) => {
-        // Kategorie erzeugen
         if (!matrix[e.kategorie]) matrix[e.kategorie] = {};
         const kat = matrix[e.kategorie];
-
-        // Name/Beschreibung (je nach Feld in deiner DB)
         const name = e.beschreibung || e.name || 'Unbekannt';
         if (!kat[name]) {
           kat[name] = {
             monate: Array(12).fill(0),
+            zellstatus: Array(12).fill(null),
             summe: 0,
             durchschnitt: 0,
           };
         }
-
-        // Wert eintragen
         kat[name].monate[monatIndex] = e.betrag;
+        if (e.startdatum) {
+          const sd = new Date(e.startdatum);
+          if (sd.getFullYear() === this.jahr && sd.getMonth() === monatIndex)
+            kat[name].zellstatus[monatIndex] = 'start';
+        }
+        if (e.enddatum) {
+          const ed = new Date(e.enddatum);
+          if (ed.getFullYear() === this.jahr && ed.getMonth() === monatIndex)
+            kat[name].zellstatus[monatIndex] = 'end';
+        }
       });
     });
 

@@ -865,10 +865,10 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
         for monat in range(1, 13):
             # Feste Ausgaben inkl. Änderungen
             ausgaben_query = db.execute(text("""
-                SELECT 
-                    fa.id, fa.beschreibung, 
+                SELECT
+                    fa.id, fa.beschreibung,
                     COALESCE(
-                        (SELECT betrag 
+                        (SELECT betrag
                          FROM ausgaben_aenderungen aa
                          WHERE aa.ausgabe_id = fa.id
                            AND aa.gueltig_ab <= :datum
@@ -876,7 +876,9 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
                          LIMIT 1),
                         fa.betrag
                     ) AS betrag,
-                    fa.kategorie
+                    fa.kategorie,
+                    fa.startdatum,
+                    fa.enddatum
                 FROM feste_ausgaben fa
                 WHERE (fa.startdatum IS NULL OR fa.startdatum <= :datum)
                   AND (fa.enddatum IS NULL OR fa.enddatum >= :datum)
@@ -889,18 +891,20 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
                     "id": row.id,
                     "beschreibung": row.beschreibung,
                     "betrag": float(row.betrag),
-                    "kategorie": row.kategorie
+                    "kategorie": row.kategorie,
+                    "startdatum": row.startdatum.isoformat() if row.startdatum else None,
+                    "enddatum": row.enddatum.isoformat() if row.enddatum else None,
                 }
                 for row in ausgaben_query
             ]
 
             # Feste Einnahmen inkl. Änderungen (ohne Andrea)
             einnahmen_query = db.execute(text("""
-                SELECT 
+                SELECT
                     fe.id,
-                    fe.name AS beschreibung,  -- alias, damit Frontend-Feld gleich bleibt
+                    fe.name AS beschreibung,
                     COALESCE(
-                        (SELECT betrag 
+                        (SELECT betrag
                          FROM einnahmen_aenderungen ea
                          WHERE ea.einnahme_id = fe.id
                            AND ea.gueltig_ab <= :datum
@@ -908,7 +912,9 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
                         LIMIT 1),
                        fe.betrag
                     ) AS betrag,
-                    fe.kategorie
+                    fe.kategorie,
+                    fe.startdatum,
+                    fe.enddatum
                 FROM feste_einnahmen fe
                 WHERE :monat = ANY(fe.zahlungsmonate)
                   AND (fe.startdatum IS NULL OR fe.startdatum <= :datum)
@@ -922,7 +928,9 @@ def get_jahresuebersicht(jahr: int, db=Depends(get_db)):
                     "id": row.id,
                     "beschreibung": row.beschreibung,
                     "betrag": float(row.betrag),
-                    "kategorie": row.kategorie
+                    "kategorie": row.kategorie,
+                    "startdatum": row.startdatum.isoformat() if row.startdatum else None,
+                    "enddatum": row.enddatum.isoformat() if row.enddatum else None,
                 }
                 for row in einnahmen_query
             ]
@@ -1193,3 +1201,108 @@ def get_timeline_ausgabe(ausgabe_id: int, jahr: int, db: Session = Depends(get_d
 @app.get("/feste-einnahmen/{einnahme_id}/timeline")
 def get_timeline_einnahme(einnahme_id: int, jahr: int, db: Session = Depends(get_db)):
     return crud.timeline_einnahme(db, einnahme_id, jahr)
+
+@app.get("/feste-posten-verlauf")
+def get_feste_posten_verlauf(db: Session = Depends(get_db)):
+    rows = db.execute(text("""
+        SELECT datum, typ, aktion, beschreibung, betrag, kategorie, details
+        FROM (
+            -- Neue feste Ausgaben
+            SELECT
+                COALESCE(erstellt_am::date, startdatum) AS datum,
+                'ausgabe' AS typ,
+                'erstellt' AS aktion,
+                beschreibung,
+                betrag::float,
+                kategorie,
+                'Startdatum: ' || TO_CHAR(startdatum, 'DD.MM.YYYY')
+                || CASE WHEN enddatum IS NOT NULL THEN ', Enddatum: ' || TO_CHAR(enddatum, 'DD.MM.YYYY') ELSE '' END
+                AS details
+            FROM feste_ausgaben
+
+            UNION ALL
+
+            -- Neue feste Einnahmen
+            SELECT
+                COALESCE(startdatum, NOW()::date) AS datum,
+                'einnahme' AS typ,
+                'erstellt' AS aktion,
+                name AS beschreibung,
+                betrag::float,
+                kategorie,
+                'Startdatum: ' || TO_CHAR(startdatum, 'DD.MM.YYYY')
+                || CASE WHEN enddatum IS NOT NULL THEN ', Enddatum: ' || TO_CHAR(enddatum, 'DD.MM.YYYY') ELSE '' END
+                AS details
+            FROM feste_einnahmen
+
+            UNION ALL
+
+            -- Betrag-Änderungen feste Ausgaben
+            SELECT
+                aa.erstellt_am::date AS datum,
+                'ausgabe' AS typ,
+                'aenderung' AS aktion,
+                fa.beschreibung,
+                aa.betrag::float,
+                fa.kategorie,
+                'Neuer Betrag ab ' || TO_CHAR(aa.gueltig_ab, 'DD.MM.YYYY') AS details
+            FROM ausgaben_aenderungen aa
+            JOIN feste_ausgaben fa ON fa.id = aa.ausgabe_id
+
+            UNION ALL
+
+            -- Betrag-Änderungen feste Einnahmen
+            SELECT
+                ea.erstellt_am::date AS datum,
+                'einnahme' AS typ,
+                'aenderung' AS aktion,
+                fe.name AS beschreibung,
+                ea.betrag::float,
+                fe.kategorie,
+                'Neuer Betrag ab ' || TO_CHAR(ea.gueltig_ab, 'DD.MM.YYYY') AS details
+            FROM einnahmen_aenderungen ea
+            JOIN feste_einnahmen fe ON fe.id = ea.einnahme_id
+
+            UNION ALL
+
+            -- Ablaufende feste Ausgaben (enddatum gesetzt)
+            SELECT
+                enddatum AS datum,
+                'ausgabe' AS typ,
+                'endet' AS aktion,
+                beschreibung,
+                betrag::float,
+                kategorie,
+                'Enddatum: ' || TO_CHAR(enddatum, 'DD.MM.YYYY') AS details
+            FROM feste_ausgaben
+            WHERE enddatum IS NOT NULL
+
+            UNION ALL
+
+            -- Ablaufende feste Einnahmen (enddatum gesetzt)
+            SELECT
+                enddatum AS datum,
+                'einnahme' AS typ,
+                'endet' AS aktion,
+                name AS beschreibung,
+                betrag::float,
+                kategorie,
+                'Enddatum: ' || TO_CHAR(enddatum, 'DD.MM.YYYY') AS details
+            FROM feste_einnahmen
+            WHERE enddatum IS NOT NULL
+        ) AS verlauf
+        ORDER BY datum DESC
+    """)).fetchall()
+
+    return [
+        {
+            "datum": str(r.datum),
+            "typ": r.typ,
+            "aktion": r.aktion,
+            "beschreibung": r.beschreibung,
+            "betrag": r.betrag,
+            "kategorie": r.kategorie,
+            "details": r.details,
+        }
+        for r in rows
+    ]
