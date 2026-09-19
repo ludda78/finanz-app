@@ -145,31 +145,9 @@
             </div>
           </div>
 
-          <!-- Kategorienübersicht -->
-          <div v-if="varKategorien.length > 0" class="mt-4">
-            <div class="fw-semibold mb-2" style="font-size:0.85rem;">Ausgaben nach Kategorie (Jahressumme)</div>
-            <table class="table table-sm table-bordered">
-              <thead class="table-light">
-                <tr>
-                  <th>Kategorie</th>
-                  <th v-for="(_, idx) in Array(12)" :key="idx" class="text-end" style="font-size:0.75rem;">
-                    {{ monatKurz(idx + 1) }}
-                  </th>
-                  <th class="text-end">Summe</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="kat in varKategorien" :key="kat.name">
-                  <td>{{ kat.name }}</td>
-                  <td v-for="(v, idx) in kat.monate" :key="idx" class="text-end text-muted" style="font-size:0.8rem;">
-                    {{ v ? formatCurrency(v) : '' }}
-                  </td>
-                  <td class="text-end fw-semibold">{{ formatCurrencyFull(kat.summe) }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div v-if="varGesamtausgaben === 0 && varGesamteinnahmen === 0" class="text-muted fst-italic mt-3">
+            Keine variablen Transaktionen in {{ jahr }} erfasst.
           </div>
-          <div v-else class="text-muted fst-italic mt-3">Keine variablen Ausgaben in {{ jahr }} erfasst.</div>
         </div>
       </div>
 
@@ -310,17 +288,6 @@ export default {
     },
     varGesamtsaldo() {
       return this.varGesamteinnahmen - this.varGesamtausgaben;
-    },
-    varKategorien() {
-      const kat = {};
-      this.variableMonate.forEach(m => {
-        Object.entries(m.kategorien || {}).forEach(([name, betrag]) => {
-          if (!kat[name]) kat[name] = { name, monate: Array(12).fill(0), summe: 0 };
-          kat[name].monate[m.monat - 1] = betrag;
-          kat[name].summe += betrag;
-        });
-      });
-      return Object.values(kat).sort((a, b) => b.summe - a.summe);
     },
   },
   methods: {
