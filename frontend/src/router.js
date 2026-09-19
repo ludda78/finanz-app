@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from "vue-router";
 import MonatsUebersicht from "./components/MonatsUebersicht.vue";
 import FesteKonfiguration from './components/FesteKonfiguration.vue';
-import JahresUebersicht from './components/JahresUebersicht.vue'; 
+import JahresUebersicht from './components/JahresUebersicht.vue';
 import InfoPage from './components/InfoPage.vue';
+import Auswertung from './components/Auswertung.vue';
 
 
 const routes = [
@@ -51,7 +52,8 @@ const routes = [
       jahr: route.params.jahr ? parseInt(route.params.jahr) : new Date().getFullYear()
     })
   },
-   { path: '/info', name: 'Info', component: InfoPage },
+  { path: '/info', name: 'Info', component: InfoPage },
+  { path: '/auswertung/:jahr?', name: 'Auswertung', component: Auswertung },
 ];
 
 const router = createRouter({

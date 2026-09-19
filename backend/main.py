@@ -1306,3 +1306,49 @@ def get_feste_posten_verlauf(db: Session = Depends(get_db)):
         }
         for r in rows
     ]
+
+
+@app.get("/variable-jahresuebersicht/{jahr}")
+def get_variable_jahresuebersicht(jahr: int, db: Session = Depends(get_db)):
+    ausgaben_rows = db.execute(text("""
+        SELECT
+            EXTRACT(MONTH FROM datum)::int AS monat,
+            COALESCE(kategorie, 'Sonstige') AS kategorie,
+            SUM(betrag)::float AS summe
+        FROM ungeplante_ausgaben
+        WHERE EXTRACT(YEAR FROM datum) = :jahr
+        GROUP BY EXTRACT(MONTH FROM datum), kategorie
+        ORDER BY monat, kategorie
+    """), {"jahr": jahr}).fetchall()
+
+    einnahmen_rows = db.execute(text("""
+        SELECT
+            EXTRACT(MONTH FROM datum)::int AS monat,
+            SUM(betrag)::float AS summe
+        FROM ungeplante_einnahmen
+        WHERE EXTRACT(YEAR FROM datum) = :jahr
+        GROUP BY EXTRACT(MONTH FROM datum)
+        ORDER BY monat
+    """), {"jahr": jahr}).fetchall()
+
+    monate = {i: {"monat": i, "ausgaben": 0.0, "einnahmen": 0.0, "kategorien": {}} for i in range(1, 13)}
+
+    for row in ausgaben_rows:
+        m = monate[row.monat]
+        m["ausgaben"] += row.summe
+        m["kategorien"][row.kategorie] = round(m["kategorien"].get(row.kategorie, 0.0) + row.summe, 2)
+
+    for row in einnahmen_rows:
+        monate[row.monat]["einnahmen"] += row.summe
+
+    result = []
+    for m in monate.values():
+        result.append({
+            "monat": m["monat"],
+            "ausgaben": round(m["ausgaben"], 2),
+            "einnahmen": round(m["einnahmen"], 2),
+            "saldo": round(m["einnahmen"] - m["ausgaben"], 2),
+            "kategorien": m["kategorien"],
+        })
+
+    return {"jahr": jahr, "monate": result}
