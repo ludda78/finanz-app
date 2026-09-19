@@ -254,7 +254,7 @@ const MONATE_KURZ = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt
 const BAR_MAX_PX = 120;
 
 export default {
-  name: 'Auswertung',
+  name: 'JahresAuswertung',
   data() {
     return {
       jahr: new Date().getFullYear(),
