@@ -186,24 +186,28 @@
 
         <!-- Virtueller Kontostand -->
         <tr>
-          <td class="text-start">Virtueller Kontostand</td>
+          <td class="text-start">
+            <span class="tooltip-hint" title="Kumulierter Monatssaldo (Einnahmen minus Ausgaben) — zeigt, wie sich dein Konto entwickeln würde, wenn alle geplanten Buchungen exakt so eintreten wie geplant.">Virtueller Kontostand</span>
+          </td>
           <td v-for="m in monate" :key="'vk'+m.monat">
             {{ formatCurrency(m.virtueller_kontostand) }}
           </td>
         </tr>
 
-        <!-- Soll-Kontostand -->
-        <tr>
-          <td class="text-start">Soll-Kontostand</td>
+        <!-- Soll-Kontostand + Δ zum Mittel (gruppiert) -->
+        <tr class="soll-gruppe">
+          <td class="text-start">
+            <span class="tooltip-hint" title="Kumulierte Abweichung der monatlichen Ausgaben vom Jahresdurchschnitt. Positiv = du liegst günstiger als der Schnitt, negativ = teurer. Bezieht sich ausschließlich auf feste Ausgaben (ohne Andrea).">Soll-Kontostand</span>
+          </td>
           <td v-for="m in monate" :key="'sk'+m.monat">
             {{ formatCurrency(m.soll_kontostand) }}
           </td>
         </tr>
-
-        <!-- Delta zum Mittel -->
-        <tr>
-          <td class="text-start">Δ zum Mittel</td>
-          <td v-for="m in monate" :key="'dm'+m.monat">
+        <tr class="soll-gruppe delta-zeile">
+          <td class="text-start text-muted">
+            <span class="tooltip-hint ps-3 d-inline-block" title="Abweichung der Ausgaben dieses Monats vom Jahresdurchschnitt. Positiv = günstiger als Schnitt, negativ = teurer. Der Soll-Kontostand ist die kumulierte Summe dieser Monatswerte.">↳ Δ Ausgaben zum Mittel</span>
+          </td>
+          <td v-for="m in monate" :key="'dm'+m.monat" class="text-muted">
             {{ formatCurrency(m.delta_mittel) }}
           </td>
         </tr>
@@ -586,6 +590,19 @@ export default {
 .table td:last-child {
   background-color: #fafafa;
   font-style: italic;
+}
+
+.tooltip-hint {
+  cursor: help;
+  border-bottom: 1px dotted #666;
+}
+
+.soll-gruppe td {
+  background-color: #f4f8fb;
+}
+
+.delta-zeile td {
+  font-size: 0.85em;
 }
 
 </style>
