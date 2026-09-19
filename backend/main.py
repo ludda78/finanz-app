@@ -1337,3 +1337,133 @@ def get_variable_jahresuebersicht(jahr: int, db: Session = Depends(get_db)):
     ]
 
     return {"jahr": jahr, "monate": result}
+
+
+@app.get("/feste-posten-delta/{jahr}")
+def get_feste_posten_delta(jahr: int, db: Session = Depends(get_db)):
+    """
+    Berechnet die finanzielle Auswirkung aller Änderungen an festen Posten im Jahr.
+    Liefert pro Ereignis: alt, neu, delta/Monat, betroffene Monate, delta/Jahr.
+    """
+    eintraege = []
+
+    # --- Neue feste Ausgaben ---
+    neue_ausgaben = db.execute(text("""
+        SELECT beschreibung, kategorie, betrag::float, startdatum,
+               EXTRACT(MONTH FROM startdatum)::int AS startmonat,
+               enddatum, zahlungsmonate
+        FROM feste_ausgaben
+        WHERE EXTRACT(YEAR FROM startdatum) = :jahr
+    """), {"jahr": jahr}).fetchall()
+
+    for r in neue_ausgaben:
+        zm = r.zahlungsmonate or list(range(1, 13))
+        monate = len([m for m in zm if m >= r.startmonat])
+        eintraege.append({
+            "seite": "ausgabe", "aktion": "neu",
+            "beschreibung": r.beschreibung, "kategorie": r.kategorie,
+            "betrag_alt": 0.0, "betrag_neu": round(r.betrag, 2),
+            "delta_monat": round(r.betrag, 2),
+            "gueltig_ab_monat": r.startmonat, "monate": monate,
+            "delta_jahr": round(r.betrag * monate, 2),
+        })
+
+    # --- Betragsänderungen feste Ausgaben ---
+    aenderungen_ausgaben = db.execute(text("""
+        SELECT fa.beschreibung, fa.kategorie, fa.zahlungsmonate,
+               aa.betrag::float AS betrag_neu,
+               EXTRACT(MONTH FROM aa.gueltig_ab)::int AS startmonat,
+               COALESCE(
+                   (SELECT aa2.betrag::float FROM ausgaben_aenderungen aa2
+                    WHERE aa2.ausgabe_id = fa.id AND aa2.gueltig_ab < aa.gueltig_ab
+                    ORDER BY aa2.gueltig_ab DESC LIMIT 1),
+                   fa.betrag::float
+               ) AS betrag_alt
+        FROM ausgaben_aenderungen aa
+        JOIN feste_ausgaben fa ON fa.id = aa.ausgabe_id
+        WHERE EXTRACT(YEAR FROM aa.gueltig_ab) = :jahr
+    """), {"jahr": jahr}).fetchall()
+
+    for r in aenderungen_ausgaben:
+        zm = r.zahlungsmonate or list(range(1, 13))
+        monate = len([m for m in zm if m >= r.startmonat])
+        delta = r.betrag_neu - r.betrag_alt
+        eintraege.append({
+            "seite": "ausgabe", "aktion": "aenderung",
+            "beschreibung": r.beschreibung, "kategorie": r.kategorie,
+            "betrag_alt": round(r.betrag_alt, 2), "betrag_neu": round(r.betrag_neu, 2),
+            "delta_monat": round(delta, 2),
+            "gueltig_ab_monat": r.startmonat, "monate": monate,
+            "delta_jahr": round(delta * monate, 2),
+        })
+
+    # --- Endende feste Ausgaben ---
+    endende_ausgaben = db.execute(text("""
+        SELECT fa.beschreibung, fa.kategorie, fa.zahlungsmonate,
+               EXTRACT(MONTH FROM fa.enddatum)::int AS endmonat,
+               COALESCE(
+                   (SELECT aa.betrag::float FROM ausgaben_aenderungen aa
+                    WHERE aa.ausgabe_id = fa.id ORDER BY aa.gueltig_ab DESC LIMIT 1),
+                   fa.betrag::float
+               ) AS betrag
+        FROM feste_ausgaben fa
+        WHERE EXTRACT(YEAR FROM fa.enddatum) = :jahr
+    """), {"jahr": jahr}).fetchall()
+
+    for r in endende_ausgaben:
+        zm = r.zahlungsmonate or list(range(1, 13))
+        monate = len([m for m in zm if m > r.endmonat])
+        eintraege.append({
+            "seite": "ausgabe", "aktion": "endet",
+            "beschreibung": r.beschreibung, "kategorie": r.kategorie,
+            "betrag_alt": round(r.betrag, 2), "betrag_neu": 0.0,
+            "delta_monat": -round(r.betrag, 2),
+            "gueltig_ab_monat": r.endmonat + 1, "monate": monate,
+            "delta_jahr": -round(r.betrag * monate, 2),
+        })
+
+    # --- Betragsänderungen feste Einnahmen ---
+    aenderungen_einnahmen = db.execute(text("""
+        SELECT fe.name AS beschreibung, fe.kategorie, fe.zahlungsmonate,
+               ea.betrag::float AS betrag_neu,
+               EXTRACT(MONTH FROM ea.gueltig_ab)::int AS startmonat,
+               COALESCE(
+                   (SELECT ea2.betrag::float FROM einnahmen_aenderungen ea2
+                    WHERE ea2.einnahme_id = fe.id AND ea2.gueltig_ab < ea.gueltig_ab
+                    ORDER BY ea2.gueltig_ab DESC LIMIT 1),
+                   fe.betrag::float
+               ) AS betrag_alt
+        FROM einnahmen_aenderungen ea
+        JOIN feste_einnahmen fe ON fe.id = ea.einnahme_id
+        WHERE EXTRACT(YEAR FROM ea.gueltig_ab) = :jahr
+    """), {"jahr": jahr}).fetchall()
+
+    for r in aenderungen_einnahmen:
+        zm = r.zahlungsmonate or list(range(1, 13))
+        monate = len([m for m in zm if m >= r.startmonat])
+        delta = r.betrag_neu - r.betrag_alt
+        eintraege.append({
+            "seite": "einnahme", "aktion": "aenderung",
+            "beschreibung": r.beschreibung, "kategorie": r.kategorie,
+            "betrag_alt": round(r.betrag_alt, 2), "betrag_neu": round(r.betrag_neu, 2),
+            "delta_monat": round(delta, 2),
+            "gueltig_ab_monat": r.startmonat, "monate": monate,
+            "delta_jahr": round(delta * monate, 2),
+        })
+
+    mehr_ausgaben = sum(e["delta_jahr"] for e in eintraege if e["seite"] == "ausgabe" and e["delta_jahr"] > 0)
+    weniger_ausgaben = sum(e["delta_jahr"] for e in eintraege if e["seite"] == "ausgabe" and e["delta_jahr"] < 0)
+    mehr_einnahmen = sum(e["delta_jahr"] for e in eintraege if e["seite"] == "einnahme" and e["delta_jahr"] > 0)
+    weniger_einnahmen = sum(e["delta_jahr"] for e in eintraege if e["seite"] == "einnahme" and e["delta_jahr"] < 0)
+
+    return {
+        "jahr": jahr,
+        "eintraege": eintraege,
+        "bilanz": {
+            "mehr_ausgaben": round(mehr_ausgaben, 2),
+            "weniger_ausgaben": round(weniger_ausgaben, 2),
+            "mehr_einnahmen": round(mehr_einnahmen, 2),
+            "weniger_einnahmen": round(weniger_einnahmen, 2),
+            "netto": round((mehr_einnahmen + weniger_einnahmen) - (mehr_ausgaben + weniger_ausgaben), 2),
+        }
+    }

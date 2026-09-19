@@ -152,71 +152,79 @@
       </div>
 
       <!-- Veränderungen feste Posten -->
+      <!-- Bilanz: Finanzielle Auswirkung der Änderungen -->
       <div class="card shadow-sm mb-4">
-        <div class="card-header bg-light fw-semibold">Veränderungen feste Posten {{ jahr }}</div>
+        <div class="card-header bg-light fw-semibold">Finanzielle Auswirkung der Änderungen {{ jahr }}</div>
         <div class="card-body">
-          <div v-if="verlaufJahr.length === 0" class="text-muted fst-italic">
+          <div v-if="delta.eintraege.length === 0" class="text-muted fst-italic">
             Keine Veränderungen in {{ jahr }} erfasst.
           </div>
           <div v-else>
+            <table class="table table-sm table-bordered mb-4">
+              <thead class="table-light">
+                <tr>
+                  <th></th>
+                  <th>Posten</th>
+                  <th>Kategorie</th>
+                  <th class="text-end">Vorher</th>
+                  <th class="text-end">Nachher</th>
+                  <th class="text-end">Δ / Monat</th>
+                  <th class="text-end">ab Monat</th>
+                  <th class="text-end">Monate</th>
+                  <th class="text-end">Δ / Jahr</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(e, i) in delta.eintraege" :key="i"
+                    :class="e.delta_jahr > 0 && e.seite === 'ausgabe' ? 'zeile-mehr' : e.delta_jahr < 0 || e.seite === 'einnahme' ? 'zeile-weniger' : ''">
+                  <td>
+                    <span class="badge" :class="e.seite === 'einnahme' ? 'bg-success' : 'bg-danger'">
+                      {{ e.seite }}
+                    </span>
+                  </td>
+                  <td>{{ e.beschreibung }}</td>
+                  <td class="text-muted">{{ e.kategorie }}</td>
+                  <td class="text-end text-muted">{{ e.betrag_alt ? formatCurrencyFull(e.betrag_alt) : '–' }}</td>
+                  <td class="text-end text-muted">{{ e.betrag_neu ? formatCurrencyFull(e.betrag_neu) : '–' }}</td>
+                  <td class="text-end fw-semibold" :class="deltaClass(e)">{{ formatDelta(e.delta_monat) }}</td>
+                  <td class="text-end text-muted">{{ monatKurz(e.gueltig_ab_monat) }}</td>
+                  <td class="text-end text-muted">{{ e.monate }}</td>
+                  <td class="text-end fw-semibold" :class="deltaClass(e)">{{ formatDelta(e.delta_jahr) }}</td>
+                </tr>
+              </tbody>
+            </table>
 
-            <div v-if="neuErstellt.length > 0" class="mb-4">
-              <div class="verlauf-header text-success">✚ Neu hinzugekommen</div>
-              <table class="table table-sm table-bordered">
-                <tbody>
-                  <tr v-for="e in neuErstellt" :key="e.beschreibung + e.datum + e.aktion">
-                    <td class="ps-2">
-                      <span class="badge" :class="e.typ === 'einnahme' ? 'bg-success' : 'bg-danger'">
-                        {{ e.typ }}
-                      </span>
-                    </td>
-                    <td>{{ e.beschreibung }}</td>
-                    <td class="text-muted">{{ e.kategorie }}</td>
-                    <td class="text-end fw-semibold">{{ formatCurrencyFull(e.betrag) }}</td>
-                    <td class="text-muted">{{ e.details }}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- Bilanz -->
+            <div class="bilanz-box">
+              <div class="row g-2">
+                <div class="col-6 col-md-3">
+                  <div class="kennzahl-box kbox-neg">
+                    <div class="kennzahl-label">Mehr Ausgaben</div>
+                    <div class="kennzahl-wert text-danger">{{ formatCurrencyFull(delta.bilanz.mehr_ausgaben) }}</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="kennzahl-box kbox-neutral-pos">
+                    <div class="kennzahl-label">Weniger Ausgaben</div>
+                    <div class="kennzahl-wert text-success">{{ formatCurrencyFull(Math.abs(delta.bilanz.weniger_ausgaben)) }}</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="kennzahl-box kbox-neutral-pos">
+                    <div class="kennzahl-label">Mehr Einnahmen</div>
+                    <div class="kennzahl-wert text-success">{{ formatCurrencyFull(delta.bilanz.mehr_einnahmen) }}</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="kennzahl-box" :class="delta.bilanz.netto >= 0 ? 'kbox-pos' : 'kbox-neg'">
+                    <div class="kennzahl-label">Netto-Effekt {{ jahr }}</div>
+                    <div class="kennzahl-wert" :class="delta.bilanz.netto >= 0 ? 'text-success' : 'text-danger'">
+                      {{ formatDelta(delta.bilanz.netto) }}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            <div v-if="geaendert.length > 0" class="mb-4">
-              <div class="verlauf-header text-primary">✎ Betragsänderungen</div>
-              <table class="table table-sm table-bordered">
-                <tbody>
-                  <tr v-for="e in geaendert" :key="e.beschreibung + e.datum + e.aktion">
-                    <td class="ps-2">
-                      <span class="badge" :class="e.typ === 'einnahme' ? 'bg-success' : 'bg-danger'">
-                        {{ e.typ }}
-                      </span>
-                    </td>
-                    <td>{{ e.beschreibung }}</td>
-                    <td class="text-muted">{{ e.kategorie }}</td>
-                    <td class="text-end fw-semibold">{{ formatCurrencyFull(e.betrag) }}</td>
-                    <td class="text-muted">{{ e.details }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div v-if="beendet.length > 0">
-              <div class="verlauf-header text-secondary">✖ Weggefallen / Beendet</div>
-              <table class="table table-sm table-bordered">
-                <tbody>
-                  <tr v-for="e in beendet" :key="e.beschreibung + e.datum + e.aktion">
-                    <td class="ps-2">
-                      <span class="badge" :class="e.typ === 'einnahme' ? 'bg-success' : 'bg-danger'">
-                        {{ e.typ }}
-                      </span>
-                    </td>
-                    <td>{{ e.beschreibung }}</td>
-                    <td class="text-muted">{{ e.kategorie }}</td>
-                    <td class="text-end fw-semibold">{{ formatCurrencyFull(e.betrag) }}</td>
-                    <td class="text-muted">{{ e.details }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
           </div>
         </div>
       </div>
@@ -240,7 +248,7 @@ export default {
       error: null,
       monate: [],
       variableMonate: [],
-      verlauf: [],
+      delta: { eintraege: [], bilanz: { mehr_ausgaben: 0, weniger_ausgaben: 0, mehr_einnahmen: 0, weniger_einnahmen: 0, netto: 0 } },
     };
   },
   created() {
@@ -265,18 +273,6 @@ export default {
     negativeMonate() {
       return this.monate.filter(m => m.saldo < 0).length;
     },
-    verlaufJahr() {
-      return this.verlauf.filter(e => e.datum && e.datum.startsWith(String(this.jahr)));
-    },
-    neuErstellt() {
-      return this.verlaufJahr.filter(e => e.aktion === 'erstellt');
-    },
-    geaendert() {
-      return this.verlaufJahr.filter(e => e.aktion === 'aenderung');
-    },
-    beendet() {
-      return this.verlaufJahr.filter(e => e.aktion === 'endet');
-    },
     maxAbsVarSaldo() {
       return Math.max(...this.variableMonate.map(m => Math.abs(m.saldo || 0)), 1);
     },
@@ -295,10 +291,10 @@ export default {
       this.loading = true;
       this.error = null;
       try {
-        const [jahresRes, verlaufRes, variableRes] = await Promise.all([
+        const [jahresRes, variableRes, deltaRes] = await Promise.all([
           api.get(`/jahresuebersicht/${this.jahr}`),
-          api.get('/feste-posten-verlauf'),
           api.get(`/variable-jahresuebersicht/${this.jahr}`),
+          api.get(`/feste-posten-delta/${this.jahr}`),
         ]);
         const byMon = new Map((jahresRes.data.monate || []).map(m => [m.monat, m]));
         this.monate = Array.from({ length: 12 }, (_, i) => ({
@@ -306,8 +302,8 @@ export default {
           saldo: 0,
           ...byMon.get(i + 1),
         }));
-        this.verlauf = verlaufRes.data;
         this.variableMonate = variableRes.data.monate || [];
+        this.delta = deltaRes.data;
       } catch (e) {
         this.error = e.message || 'Fehler beim Laden';
       } finally {
@@ -332,6 +328,15 @@ export default {
       return new Intl.NumberFormat('de-DE', {
         style: 'currency', currency: 'EUR'
       }).format(v);
+    },
+    formatDelta(v) {
+      if (v === 0) return '±0 €';
+      const sign = v > 0 ? '+' : '';
+      return sign + new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(v);
+    },
+    deltaClass(e) {
+      if (e.seite === 'ausgabe') return e.delta_jahr > 0 ? 'text-danger' : 'text-success';
+      return e.delta_jahr > 0 ? 'text-success' : 'text-danger';
     },
     jahrMinus() { if (this.jahr > 2020) this.jahr--; },
     jahrPlus() { this.jahr++; },
@@ -425,12 +430,10 @@ export default {
 .kennzahl-label { font-size: 0.75rem; color: #666; margin-bottom: 4px; }
 .kennzahl-wert  { font-size: 1.15rem; font-weight: 600; }
 
-/* Verlauf */
-.verlauf-header {
-  font-weight: 600;
-  margin-bottom: 6px;
-  font-size: 0.9rem;
-}
+/* Delta-Tabelle */
+.zeile-mehr  { background-color: #fff5f5; }
+.zeile-weniger { background-color: #f5fff5; }
+.bilanz-box { margin-top: 12px; }
 
 .table td { vertical-align: middle; }
 </style>
