@@ -69,14 +69,27 @@ class UngeplantTransaktion(Base):
     
 class SollKontostandDB(Base):
     __tablename__ = "soll_kontostaende"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     jahr = Column(Integer, nullable=False)
     monat = Column(Integer, nullable=False)
     kontostand_soll = Column(Numeric(10, 2), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    
+
     __table_args__ = (
         UniqueConstraint('jahr', 'monat', name='unique_jahr_monat'),
     )
+
+class Kredit(Base):
+    __tablename__ = "kredite"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bezeichnung = Column(String(255), nullable=False)
+    kategorie = Column(String(100), nullable=False, default='Sonstige')
+    darlehensbetrag = Column(Numeric(12, 2), nullable=False)
+    zinssatz = Column(Numeric(6, 4), nullable=False)
+    monatliche_rate = Column(Numeric(10, 2), nullable=False)
+    startdatum = Column(Date, nullable=False)
+    notiz = Column(String, nullable=True)
+    erstellt_am = Column(DateTime, server_default=func.now())

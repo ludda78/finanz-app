@@ -7,6 +7,7 @@
       <router-link to="/konfiguration">Feste Posten</router-link>
       <router-link :to="{name: 'Jahresuebersicht'}" class="nav-button">Jahresübersicht</router-link>
       <router-link :to="{ name: 'Auswertung' }">Auswertung</router-link>
+      <router-link :to="{ name: 'Kredite' }">Kredite</router-link>
       <router-link to="/info">Info</router-link>
     </div>
     

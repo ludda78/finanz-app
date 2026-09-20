@@ -715,4 +715,82 @@ def timeline_einnahme(db: Session, einnahme_id: int, year: int):
     rows = db.execute(stmt, {"year": year, "id": einnahme_id}).fetchall()
     return [dict(r._mapping) for r in rows]
 
-    
+
+# --- Kredite ---
+
+def get_alle_kredite(db: Session):
+    rows = db.execute(text("""
+        SELECT id, bezeichnung, kategorie, darlehensbetrag::float, zinssatz::float,
+               monatliche_rate::float, startdatum, notiz, erstellt_am
+        FROM kredite
+        ORDER BY startdatum
+    """)).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+def create_kredit(db: Session, kredit: schemas.KreditCreate):
+    try:
+        row = db.execute(text("""
+            INSERT INTO kredite (bezeichnung, kategorie, darlehensbetrag, zinssatz, monatliche_rate, startdatum, notiz)
+            VALUES (:bezeichnung, :kategorie, :darlehensbetrag, :zinssatz, :monatliche_rate, :startdatum, :notiz)
+            RETURNING id, bezeichnung, kategorie, darlehensbetrag::float, zinssatz::float,
+                      monatliche_rate::float, startdatum, notiz, erstellt_am
+        """), {
+            "bezeichnung": kredit.bezeichnung,
+            "kategorie": kredit.kategorie,
+            "darlehensbetrag": kredit.darlehensbetrag,
+            "zinssatz": kredit.zinssatz,
+            "monatliche_rate": kredit.monatliche_rate,
+            "startdatum": kredit.startdatum,
+            "notiz": kredit.notiz,
+        }).fetchone()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping)
+
+
+def update_kredit(db: Session, kredit_id: int, kredit: schemas.KreditCreate):
+    try:
+        row = db.execute(text("""
+            UPDATE kredite
+            SET bezeichnung=:bezeichnung, kategorie=:kategorie, darlehensbetrag=:darlehensbetrag,
+                zinssatz=:zinssatz, monatliche_rate=:monatliche_rate, startdatum=:startdatum, notiz=:notiz
+            WHERE id=:id
+            RETURNING id, bezeichnung, kategorie, darlehensbetrag::float, zinssatz::float,
+                      monatliche_rate::float, startdatum, notiz, erstellt_am
+        """), {
+            "bezeichnung": kredit.bezeichnung,
+            "kategorie": kredit.kategorie,
+            "darlehensbetrag": kredit.darlehensbetrag,
+            "zinssatz": kredit.zinssatz,
+            "monatliche_rate": kredit.monatliche_rate,
+            "startdatum": kredit.startdatum,
+            "notiz": kredit.notiz,
+            "id": kredit_id,
+        }).fetchone()
+        if not row:
+            raise HTTPException(404, detail="Kredit nicht gefunden.")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    return dict(row._mapping)
+
+
+def delete_kredit(db: Session, kredit_id: int):
+    try:
+        row = db.execute(text("DELETE FROM kredite WHERE id=:id RETURNING id"), {"id": kredit_id}).fetchone()
+        if not row:
+            raise HTTPException(404, detail="Kredit nicht gefunden.")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted_id": kredit_id}
+

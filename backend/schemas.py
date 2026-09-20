@@ -139,3 +139,31 @@ class AusgabeAenderungUpdate(BaseModel):
 class EinnahmeAenderungUpdate(BaseModel):
     gueltig_ab: Optional[date] = None
     betrag: Optional[float] = None
+
+class KreditBase(BaseModel):
+    bezeichnung: str
+    kategorie: str = 'Sonstige'
+    darlehensbetrag: float
+    zinssatz: float
+    monatliche_rate: float
+    startdatum: date
+    notiz: Optional[str] = None
+
+class KreditCreate(KreditBase):
+    pass
+
+class KreditUpdate(BaseModel):
+    bezeichnung: Optional[str] = None
+    kategorie: Optional[str] = None
+    darlehensbetrag: Optional[float] = None
+    zinssatz: Optional[float] = None
+    monatliche_rate: Optional[float] = None
+    startdatum: Optional[date] = None
+    notiz: Optional[str] = None
+
+class KreditSchema(KreditBase):
+    id: int
+    erstellt_am: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

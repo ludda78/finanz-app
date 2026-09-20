@@ -4,6 +4,7 @@ import FesteKonfiguration from './components/FesteKonfiguration.vue';
 import JahresUebersicht from './components/JahresUebersicht.vue';
 import InfoPage from './components/InfoPage.vue';
 import Auswertung from './components/Auswertung.vue';
+import Kredite from './components/Kredite.vue';
 
 
 const routes = [
@@ -54,6 +55,7 @@ const routes = [
   },
   { path: '/info', name: 'Info', component: InfoPage },
   { path: '/auswertung/:jahr?', name: 'Auswertung', component: Auswertung },
+  { path: '/kredite', name: 'Kredite', component: Kredite },
 ];
 
 const router = createRouter({

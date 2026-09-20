@@ -1467,3 +1467,25 @@ def get_feste_posten_delta(jahr: int, db: Session = Depends(get_db)):
             "netto": round((mehr_einnahmen + weniger_einnahmen) - (mehr_ausgaben + weniger_ausgaben), 2),
         }
     }
+
+
+# --- Kredite ---
+
+@app.get("/kredite")
+def get_kredite(db: Session = Depends(get_db)):
+    return crud.get_alle_kredite(db)
+
+
+@app.post("/kredite")
+def create_kredit(kredit: schemas.KreditCreate, db: Session = Depends(get_db)):
+    return crud.create_kredit(db, kredit)
+
+
+@app.put("/kredite/{kredit_id}")
+def update_kredit(kredit_id: int, kredit: schemas.KreditCreate, db: Session = Depends(get_db)):
+    return crud.update_kredit(db, kredit_id, kredit)
+
+
+@app.delete("/kredite/{kredit_id}")
+def delete_kredit(kredit_id: int, db: Session = Depends(get_db)):
+    return crud.delete_kredit(db, kredit_id)
