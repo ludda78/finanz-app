@@ -87,31 +87,36 @@
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-light fw-semibold">Variable Ausgaben (ungeplant)</div>
         <div class="card-body">
+          <!-- Legende -->
+          <div class="d-flex gap-3 mb-2" style="font-size:0.78rem;">
+            <span><span class="legend-dot pos"></span> Einnahmen</span>
+            <span><span class="legend-dot neg"></span> Ausgaben</span>
+          </div>
           <div class="chart-scroll">
             <div class="chart-bars">
               <div v-for="m in variableMonate" :key="m.monat" class="chart-col">
-                <div class="chart-value-top" :class="m.saldo > 0 ? 'pos' : 'invis'">
-                  {{ m.saldo > 0 ? formatCurrency(m.saldo) : '' }}
+                <div class="chart-value-top pos" :class="{ invis: m.einnahmen === 0 }">
+                  {{ m.einnahmen > 0 ? formatCurrency(m.einnahmen) : '' }}
                 </div>
                 <div class="chart-top">
                   <div
-                    v-if="m.saldo > 0"
+                    v-if="m.einnahmen > 0"
                     class="bar bar-pos"
-                    :style="{ height: varBarHeight(m.saldo) + 'px' }"
-                    :title="'Einnahmen: ' + formatCurrencyFull(m.einnahmen) + ' | Ausgaben: ' + formatCurrencyFull(m.ausgaben)"
+                    :style="{ height: varEinnahmenHeight(m.einnahmen) + 'px' }"
+                    :title="'Einnahmen: ' + formatCurrencyFull(m.einnahmen)"
                   ></div>
                 </div>
                 <div class="chart-monat">{{ monatKurz(m.monat) }}</div>
                 <div class="chart-bottom">
                   <div
-                    v-if="m.saldo < 0"
+                    v-if="m.ausgaben > 0"
                     class="bar bar-neg"
-                    :style="{ height: varBarHeight(m.saldo) + 'px' }"
-                    :title="'Ausgaben: ' + formatCurrencyFull(m.ausgaben) + ' | Einnahmen: ' + formatCurrencyFull(m.einnahmen)"
+                    :style="{ height: varAusgabenHeight(m.ausgaben) + 'px' }"
+                    :title="'Ausgaben: ' + formatCurrencyFull(m.ausgaben)"
                   ></div>
                 </div>
-                <div class="chart-value-bottom" :class="m.saldo < 0 ? 'neg' : 'invis'">
-                  {{ m.saldo < 0 ? formatCurrency(m.ausgaben * -1) : '' }}
+                <div class="chart-value-bottom neg" :class="{ invis: m.ausgaben === 0 }">
+                  {{ m.ausgaben > 0 ? formatCurrency(m.ausgaben) : '' }}
                 </div>
               </div>
             </div>
@@ -273,8 +278,12 @@ export default {
     negativeMonate() {
       return this.monate.filter(m => m.saldo < 0).length;
     },
-    maxAbsVarSaldo() {
-      return Math.max(...this.variableMonate.map(m => Math.abs(m.saldo || 0)), 1);
+    maxVarWert() {
+      return Math.max(
+        ...this.variableMonate.map(m => m.einnahmen || 0),
+        ...this.variableMonate.map(m => m.ausgaben || 0),
+        1
+      );
     },
     varGesamtausgaben() {
       return this.variableMonate.reduce((s, m) => s + (m.ausgaben || 0), 0);
@@ -313,8 +322,11 @@ export default {
     barHeight(saldo) {
       return Math.round((Math.abs(saldo) / this.maxAbsSaldo) * BAR_MAX_PX);
     },
-    varBarHeight(saldo) {
-      return Math.round((Math.abs(saldo) / this.maxAbsVarSaldo) * BAR_MAX_PX);
+    varEinnahmenHeight(v) {
+      return Math.round((v / this.maxVarWert) * BAR_MAX_PX);
+    },
+    varAusgabenHeight(v) {
+      return Math.round((v / this.maxVarWert) * BAR_MAX_PX);
     },
     monatKurz(n) {
       return MONATE_KURZ[n - 1];
@@ -429,6 +441,15 @@ export default {
 
 .kennzahl-label { font-size: 0.75rem; color: #666; margin-bottom: 4px; }
 .kennzahl-wert  { font-size: 1.15rem; font-weight: 600; }
+
+.legend-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  margin-right: 3px;
+}
+.legend-dot.pos { background: #4caf50; }
+.legend-dot.neg { background: #e53935; }
 
 /* Delta-Tabelle */
 .zeile-mehr  { background-color: #fff5f5; }
