@@ -19,6 +19,8 @@ finanzapp/
 │   │   │   ├── MonatsUebersicht.vue    # Monatsübersicht, Kontostand, offene Posten
 │   │   │   ├── JahresUebersicht.vue    # Jahreskennzahlen, feste Posten-Tabellen
 │   │   │   ├── FesteKonfiguration.vue  # Verwaltung fester Ein-/Ausgaben
+│   │   │   ├── Auswertung.vue          # Jahresauswertung: Saldo-Chart, variable Kosten, Delta feste Posten
+│   │   │   ├── Kredite.vue             # Kreditverwaltung: Kennzahlen, Restschuld-Chart, CRUD
 │   │   │   └── InfoPage.vue
 │   │   └── api.js                      # Axios-Client, baseURL: "/api"
 │   └── vue.config.js                   # Dev-Proxy /api → localhost:8001
@@ -34,6 +36,26 @@ finanzapp/
 - **Soll-Kontostand** = kumulierte Abweichung der monatlichen Ausgaben vom Jahresdurchschnitt (nur feste Ausgaben, ohne Kategorie "Andrea"). Berechnet in `crud.py::berechne_soll_kontostaende_fuer_jahr`.
 - **Virtueller Kontostand** = kumulierter Monatssaldo (Einnahmen − Ausgaben).
 - **Delta zum Mittel** = monatliche Einzelabweichung vom Durchschnitt — Kumulation davon ergibt den Soll-Kontostand.
+- **Annuitätendarlehen (Kredite)** = Tilgungsplan wird vollständig im Frontend berechnet (`Kredite.vue::berechnePlan`): Monatszins = Restschuld × Zinssatz / 12 / 100, Tilgung = Rate − Zinsen, neue Restschuld = Restschuld − Tilgung.
+
+## API-Endpunkte (Backend)
+
+| Methode | Pfad | Beschreibung |
+|---------|------|--------------|
+| GET | `/jahresuebersicht/{jahr}` | Jahreskennzahlen, Soll-/virtueller Kontostand, Detailposten |
+| GET | `/variable-jahresuebersicht/{jahr}` | Ungeplante Transaktionen gruppiert nach Monat/Typ |
+| GET | `/feste-posten-delta/{jahr}` | Finanzielle Auswirkung aller Änderungen an festen Posten |
+| GET/POST | `/kredite` | Alle Kredite abrufen / neuen Kredit anlegen |
+| PUT/DELETE | `/kredite/{id}` | Kredit bearbeiten / löschen |
+| GET | `/feste-ausgaben`, `/feste-einnahmen` | Feste Posten verwalten |
+| POST | `/kontostand-ist` | Ist-Kontostand speichern |
+
+## Tabellen (Datenbank)
+
+- `feste_ausgaben`, `feste_einnahmen` — feste monatliche Posten
+- `ausgaben_aenderungen`, `einnahmen_aenderungen` — Betragsänderungen mit `gueltig_ab`
+- `ungeplante_transaktionen` — variable Ein-/Ausgaben (Spalten: `typ`, `monat`, `jahr`, `betrag`)
+- `kredite` — Darlehen (Darlehensbetrag, Zinssatz, Rate, Startdatum)
 
 ## Deployment-Workflow
 
