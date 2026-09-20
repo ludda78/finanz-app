@@ -260,7 +260,7 @@ export default {
       formError: null,
       deleteTarget: null,
       form: this.emptyForm(),
-      _plans: {},
+      planCache: {},
     };
   },
   computed: {
@@ -294,7 +294,7 @@ export default {
         // Precompute plans
         const plans = {};
         for (const k of data) plans[k.id] = berechnePlan(k);
-        this._plans = plans;
+        this.planCache = plans;
       } catch (e) {
         this.error = 'Fehler beim Laden der Kredite.';
       } finally {
@@ -303,7 +303,7 @@ export default {
     },
 
     getPlan(kredit) {
-      return this._plans[kredit.id] || [];
+      return this.planCache[kredit.id] || [];
     },
 
     aktuelleRestschuld(kredit) {
