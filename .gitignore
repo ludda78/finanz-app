@@ -75,6 +75,9 @@ yarn-error.log*
 *.sqlite
 *.db
 
+# Claude Code local settings (may contain secrets)
+.claude/
+
 # Editor directories and files
 .idea
 .vscode
