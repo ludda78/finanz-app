@@ -496,12 +496,15 @@ export default {
     },
 
     onChartHover(kredit, event) {
-      const svgEl = event.currentTarget.closest('svg');
-      const rect = svgEl.getBoundingClientRect();
-      const plotX = ((event.clientX - rect.left) / rect.width) * 560 - 10;
-      const clamped = Math.max(0, Math.min(plotX, 540));
       const plan = this.getPlan(kredit);
       if (!plan.length) return;
+      // getScreenCTM berücksichtigt SVG-Skalierung und preserveAspectRatio korrekt
+      const svgEl = event.currentTarget.closest('svg');
+      const pt = svgEl.createSVGPoint();
+      pt.x = event.clientX;
+      pt.y = event.clientY;
+      const plotPt = pt.matrixTransform(event.currentTarget.getScreenCTM().inverse());
+      const clamped = Math.max(0, Math.min(plotPt.x, 540));
       const idx = Math.round((clamped / 540) * (plan.length - 1));
       const e = plan[Math.max(0, Math.min(idx, plan.length - 1))];
       this.hoverInfo = {
