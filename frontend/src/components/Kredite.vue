@@ -130,6 +130,39 @@
                 <!-- Y-axis labels -->
                 <text x="-4" y="4" text-anchor="end" font-size="9" fill="#888">{{ formatCurrencyShort(kredit.darlehensbetrag) }}</text>
                 <text x="-4" y="102" text-anchor="end" font-size="9" fill="#888">0</text>
+                <!-- Hover capture area -->
+                <rect
+                  x="0" y="0" width="540" height="100"
+                  fill="transparent"
+                  style="cursor: crosshair;"
+                  @mousemove="onChartHover(kredit, $event)"
+                  @mouseleave="hoverInfo = null"
+                />
+                <!-- Hover tooltip -->
+                <template v-if="hoverInfo && hoverInfo.kreditId === kredit.id">
+                  <line
+                    :x1="hoverInfo.x" y1="0"
+                    :x2="hoverInfo.x" y2="100"
+                    stroke="#555" stroke-width="1" stroke-dasharray="3,2"
+                  />
+                  <circle :cx="hoverInfo.x" :cy="hoverInfo.y" r="4" fill="white" stroke="#dc3545" stroke-width="2"/>
+                  <rect
+                    :x="hoverInfo.x > 370 ? hoverInfo.x - 108 : hoverInfo.x + 8"
+                    :y="hoverInfo.y > 70 ? hoverInfo.y - 38 : hoverInfo.y + 6"
+                    width="100" height="34" rx="4"
+                    fill="white" stroke="#ddd" stroke-width="1"
+                  />
+                  <text
+                    :x="hoverInfo.x > 370 ? hoverInfo.x - 103 : hoverInfo.x + 13"
+                    :y="hoverInfo.y > 70 ? hoverInfo.y - 22 : hoverInfo.y + 20"
+                    font-size="9" fill="#666"
+                  >{{ String(hoverInfo.monat).padStart(2,'0') }}/{{ hoverInfo.jahr }}</text>
+                  <text
+                    :x="hoverInfo.x > 370 ? hoverInfo.x - 103 : hoverInfo.x + 13"
+                    :y="hoverInfo.y > 70 ? hoverInfo.y - 9 : hoverInfo.y + 33"
+                    font-size="10" font-weight="bold" fill="#dc3545"
+                  >{{ formatCurrency(hoverInfo.restschuld) }}</text>
+                </template>
               </g>
             </svg>
           </div>
@@ -137,6 +170,52 @@
           <div v-if="kredit.notiz" class="text-muted mt-2" style="font-size: 0.85rem;">
             <span class="fw-semibold">Notiz:</span> {{ kredit.notiz }}
           </div>
+
+          <!-- Tilgungsplan -->
+          <div class="mt-3">
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              @click="toggleTilgungsplan(kredit.id)"
+            >
+              {{ tilgungsplanOpen === kredit.id ? '▲ Tilgungsplan ausblenden' : '▼ Tilgungsplan anzeigen' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tilgungsplan Overlay -->
+    <div v-if="tilgungsplanOpen" class="modal-overlay" @click.self="tilgungsplanOpen = null">
+      <div class="modal-box tilgungsplan-box">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="fw-semibold m-0">Tilgungsplan – {{ tilgungsplanKredit && tilgungsplanKredit.bezeichnung }}</h5>
+          <button class="btn-close" @click="tilgungsplanOpen = null"></button>
+        </div>
+        <div class="table-responsive" style="max-height: 60vh; overflow-y: auto;">
+          <table class="table table-sm table-hover" style="font-size: 0.82rem;">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>Monat</th>
+                <th class="text-end">Rate</th>
+                <th class="text-end">Zinsen</th>
+                <th class="text-end">Tilgung</th>
+                <th class="text-end">Restschuld</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="eintrag in tilgungsplanEintraege"
+                :key="eintrag.monat"
+                :class="eintrag.isToday ? 'table-primary fw-semibold' : ''"
+              >
+                <td>{{ String(eintrag.month).padStart(2,'0') }}/{{ eintrag.year }}</td>
+                <td class="text-end">{{ formatCurrency(eintrag.zinsen + eintrag.tilgung) }}</td>
+                <td class="text-end text-danger">{{ formatCurrency(eintrag.zinsen) }}</td>
+                <td class="text-end text-success">{{ formatCurrency(eintrag.tilgung) }}</td>
+                <td class="text-end fw-semibold">{{ formatCurrency(eintrag.restschuld) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -261,9 +340,27 @@ export default {
       deleteTarget: null,
       form: this.emptyForm(),
       planCache: {},
+      hoverInfo: null,
+      tilgungsplanOpen: null,
     };
   },
   computed: {
+    tilgungsplanKredit() {
+      return this.kredite.find(k => k.id === this.tilgungsplanOpen) || null;
+    },
+    tilgungsplanEintraege() {
+      if (!this.tilgungsplanOpen) return [];
+      const kredit = this.tilgungsplanKredit;
+      if (!kredit) return [];
+      const plan = this.getPlan(kredit);
+      const today = new Date();
+      const ty = today.getFullYear();
+      const tm = today.getMonth() + 1;
+      return plan.map(e => ({
+        ...e,
+        isToday: e.year === ty && e.month === tm,
+      }));
+    },
     formPreview() {
       const f = this.form;
       if (!f.darlehensbetrag || !f.zinssatz || !f.monatliche_rate || !f.startdatum) return null;
@@ -351,71 +448,74 @@ export default {
       return Math.round(plan.reduce((s, e) => s + e.zinsen, 0) * 100) / 100;
     },
 
-    // SVG chart helpers
-    chartSamples(kredit) {
-      const plan = this.getPlan(kredit);
-      if (!plan.length) return [];
-      const samples = [];
-      let lastYear = -1;
-      for (const e of plan) {
-        if (e.year !== lastYear) { samples.push(e); lastYear = e.year; }
-      }
-      if (samples[samples.length - 1] !== plan[plan.length - 1]) {
-        samples.push(plan[plan.length - 1]);
-      }
-      return samples;
-    },
-
+    // SVG chart helpers — alle Methoden nutzen den vollständigen monatlichen Plan
     chartPoints(kredit) {
-      const samples = this.chartSamples(kredit);
-      if (samples.length < 2) return '';
-      const W = 540, H = 100;
-      const max = kredit.darlehensbetrag;
-      const n = samples.length;
-      return samples.map((e, i) => {
-        const x = (i / (n - 1)) * W;
+      const plan = this.getPlan(kredit);
+      if (plan.length < 2) return '';
+      const W = 540, H = 100, max = kredit.darlehensbetrag;
+      return plan.map((e, i) => {
+        const x = (i / (plan.length - 1)) * W;
         const y = H - (e.restschuld / max) * H;
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       }).join(' ');
     },
 
     chartLabels(kredit) {
-      const samples = this.chartSamples(kredit);
-      if (samples.length < 2) return [];
+      const plan = this.getPlan(kredit);
+      if (plan.length < 2) return [];
       const W = 540;
-      const n = samples.length;
-      return samples.map((e, i) => ({
-        year: e.year,
-        x: (i / (n - 1)) * W,
-      }));
+      const labels = [];
+      let lastYear = -1;
+      plan.forEach((e, i) => {
+        if (e.year !== lastYear) {
+          labels.push({ year: e.year, x: (i / (plan.length - 1)) * W });
+          lastYear = e.year;
+        }
+      });
+      return labels;
     },
 
     todayX(kredit) {
-      const samples = this.chartSamples(kredit);
-      if (samples.length < 2) return null;
       const plan = this.getPlan(kredit);
+      if (plan.length < 2) return null;
       const today = new Date();
-      const ty = today.getFullYear();
-      const tm = today.getMonth() + 1;
-      // Find index of current month in plan
-      const idx = plan.findIndex(e => e.year > ty || (e.year === ty && e.month > tm));
-      if (idx <= 0) return null;
-      const W = 540;
-      return ((idx / (plan.length - 1)) * W).toFixed(1);
+      const ty = today.getFullYear(), tm = today.getMonth() + 1;
+      const idx = plan.findIndex(e => e.year > ty || (e.year === ty && e.month >= tm));
+      if (idx < 0) return null;
+      return ((idx / (plan.length - 1)) * 540).toFixed(1);
     },
 
     todayY(kredit) {
       const plan = this.getPlan(kredit);
+      if (!plan.length) return '100';
       const today = new Date();
-      const ty = today.getFullYear();
-      const tm = today.getMonth() + 1;
-      let rs = kredit.darlehensbetrag;
-      for (const e of plan) {
-        if (e.year < ty || (e.year === ty && e.month <= tm)) rs = e.restschuld;
-        else break;
-      }
-      const H = 100;
-      return (H - (rs / kredit.darlehensbetrag) * H).toFixed(1);
+      const ty = today.getFullYear(), tm = today.getMonth() + 1;
+      const idx = plan.findIndex(e => e.year > ty || (e.year === ty && e.month >= tm));
+      if (idx < 0) return '100';
+      return (100 - (plan[idx].restschuld / kredit.darlehensbetrag) * 100).toFixed(1);
+    },
+
+    onChartHover(kredit, event) {
+      const svgEl = event.currentTarget.closest('svg');
+      const rect = svgEl.getBoundingClientRect();
+      const plotX = ((event.clientX - rect.left) / rect.width) * 560 - 10;
+      const clamped = Math.max(0, Math.min(plotX, 540));
+      const plan = this.getPlan(kredit);
+      if (!plan.length) return;
+      const idx = Math.round((clamped / 540) * (plan.length - 1));
+      const e = plan[Math.max(0, Math.min(idx, plan.length - 1))];
+      this.hoverInfo = {
+        kreditId: kredit.id,
+        x: (idx / (plan.length - 1)) * 540,
+        y: 100 - (e.restschuld / kredit.darlehensbetrag) * 100,
+        restschuld: e.restschuld,
+        monat: e.month,
+        jahr: e.year,
+      };
+    },
+
+    toggleTilgungsplan(kreditId) {
+      this.tilgungsplanOpen = this.tilgungsplanOpen === kreditId ? null : kreditId;
     },
 
     startCreate() {
@@ -553,5 +653,8 @@ export default {
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.tilgungsplan-box {
+  max-width: 700px;
 }
 </style>
