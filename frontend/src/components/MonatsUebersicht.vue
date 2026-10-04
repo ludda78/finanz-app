@@ -1452,8 +1452,6 @@ input[type="number"] {
 
 .kontostand-info p:last-child {
   margin-bottom: 0;
-  font-size: 16px;
-  font-weight: bold;
 }
 
 /* Responsive Design für kleinere Bildschirme */
