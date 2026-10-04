@@ -26,4 +26,14 @@ export default {
   margin: 0 auto;
   padding: 1rem;
 }
+.info-page :deep(table) {
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+.info-page :deep(th),
+.info-page :deep(td) {
+  border: 1px solid #dee2e6;
+  padding: 6px 10px;
+  vertical-align: top;
+}
 </style>

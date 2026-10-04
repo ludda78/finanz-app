@@ -166,19 +166,99 @@
 <div class="kontostand-section">
    <div style="display: flex; justify-content: space-between; align-items: center;">
     <h2 class="tooltip-hint" title="Soll-Kontostand: Kontostand, den das Konto am Monatsende haben muss, damit du aufs Jahr gesehen auf ±0 rauskommst. Virtueller Kontostand: Idealer Kontostand wenn jeder Monat gleich teuer wäre. Ist Monatsende: Voraussichtlicher Kontostand am Monatsende (aktueller IST minus noch offene Ausgaben plus noch offene Einnahmen). Abweichung Monatsende: Vergleich des voraussichtlichen Endes mit dem Zielwert.">Kontostand</h2>
-    <button @click="berechneSollKontostand" class="btn-recalculate">
-      Soll-Kontostand neu berechnen
-    </button>
+    <div style="display: flex; gap: 8px;">
+      <button @click="showKontostandHilfe = !showKontostandHilfe" class="btn-recalculate">
+        {{ showKontostandHilfe ? 'Erklärung ausblenden' : '? Wie lese ich das?' }}
+      </button>
+      <button @click="berechneSollKontostand" class="btn-recalculate">
+        Soll-Kontostand neu berechnen
+      </button>
+    </div>
   </div>
+
+  <div v-if="showKontostandHilfe" class="kontostand-hilfe">
+    <p>
+      Die Box beantwortet eine Frage: <strong>Ist am Monatsende so viel Geld auf dem Konto wie geplant?</strong>
+      <span style="color: green;">Grün</span> = mehr auf dem Konto als geplant,
+      <span style="color: red;">Rot</span> = weniger.
+    </p>
+
+    <p v-if="voraussichtlicherKontostand === null">
+      Trag zuerst oben deinen aktuellen Kontostand ein – dann siehst du hier den Rechenweg mit deinen Zahlen.
+    </p>
+
+    <template v-else>
+      <p class="hilfe-titel">Rechenweg für {{ monate[selectedMonth - 1] }}</p>
+      <div class="hilfe-rechnung">
+        <div class="hilfe-chip"><span>Ist aktuell</span><strong>{{ euro(istKontostand) }}</strong></div>
+        <span class="hilfe-op">−</span>
+        <div class="hilfe-chip"><span>feste Ausgaben, noch offen</span><strong>{{ euro(restFesteAusgaben) }}</strong></div>
+        <span class="hilfe-op">+</span>
+        <div class="hilfe-chip"><span>feste Einnahmen, noch offen</span><strong>{{ euro(restFesteEinnahmen) }}</strong></div>
+        <span class="hilfe-op">=</span>
+        <div class="hilfe-chip hilfe-chip-ergebnis"><span>Ist Monatsende</span><strong>{{ euro(voraussichtlicherKontostand) }}</strong></div>
+      </div>
+      <div class="hilfe-rechnung">
+        <div class="hilfe-chip hilfe-chip-ergebnis"><span>Ist Monatsende</span><strong>{{ euro(voraussichtlicherKontostand) }}</strong></div>
+        <span class="hilfe-op">−</span>
+        <div class="hilfe-chip"><span>Soll-Kontostand</span><strong>{{ euro(sollKontostand) }}</strong></div>
+        <span class="hilfe-op">=</span>
+        <div class="hilfe-chip hilfe-chip-ergebnis">
+          <span>Abweichung Monatsende</span>
+          <strong :style="{ color: abweichungMonatsendeSoll < 0 ? 'red' : 'green' }">{{ euro(abweichungMonatsendeSoll) }}</strong>
+        </div>
+      </div>
+
+      <ol>
+        <li>
+          <strong>Ist aktuell / Abweichung:</strong> dein Kontostand von heute, verglichen mit dem Zielwert fürs <em>Monatsende</em>.
+          Mitten im Monat sieht das fast immer zu gut aus, weil noch feste Posten abgehen. Diese Zahl ist erst am Monatsende aussagekräftig.
+        </li>
+        <li>
+          <strong>Ist Monatsende:</strong> die Hochrechnung – Kontostand heute, abzüglich der festen Ausgaben, die noch nicht abgebucht sind,
+          zuzüglich der festen Einnahmen, die noch kommen.
+        </li>
+        <li>
+          <strong>Soll-Kontostand ({{ euro(sollKontostand) }}):</strong> so viel muss am Monatsende auf dem Konto sein, damit sich teure und günstige
+          Monate übers Jahr ausgleichen und du am Jahresende bei ±0 landest. Ein negativer Wert heißt: bis hierhin waren die Monate teurer als der
+          Jahresschnitt, das Konto darf laut Plan im Minus sein.
+        </li>
+        <li>
+          <strong>Virtueller Kontostand ({{ euro(virtuellerKontostandBetrag) }}):</strong> alle geplanten festen Einnahmen minus Ausgaben seit Januar –
+          der Stand, wenn alles exakt nach Plan läuft.
+        </li>
+        <li>
+          <strong>Abweichung Monatsende – die wichtigste Zahl:</strong> du landest voraussichtlich
+          <strong>{{ ueberUnter(abweichungMonatsendeSoll) }}</strong> dem Soll-Kontostand und
+          <strong>{{ ueberUnter(abweichungMonatsendeVirtuell) }}</strong> dem virtuellen Kontostand.
+        </li>
+        <li v-if="summeNichtAusgeglicheneAusgaben > 0">
+          <strong>Gelber Kasten:</strong> {{ euro(summeNichtAusgeglicheneAusgaben) }} ungeplante Ausgaben sind schon vom Konto weg, aber noch nicht ausgeglichen.
+          Buchst du sie zurück aufs Konto, steigt „Ist Monatsende“ um diesen Betrag und du liegst
+          <strong>{{ ueberUnter(abweichungZuSollNachAusgleich) }}</strong> dem Soll.
+          <template v-if="veraenderungSollNachAusgleichZuVormonat !== null">
+            Die graue Klammer ist der Trend: gegenüber Ende {{ vormonatName }} hat sich dein Abstand zum Soll um
+            {{ euro(Math.abs(veraenderungSollNachAusgleichZuVormonat)) }}
+            {{ veraenderungSollNachAusgleichZuVormonat < 0 ? 'verschlechtert' : 'verbessert' }}.
+          </template>
+        </li>
+        <li>
+          <strong>Weißer Kasten unten:</strong> wiederholt die Abweichung von heute und zeigt darunter, wie du den Vormonat abgeschlossen hast
+          (Ist minus Soll am Monatsende).
+        </li>
+      </ol>
+    </template>
+  </div>
+
   <table>
     <thead>
       <tr>
         <th>Beschreibung</th>
-        <th>Soll</th>
-        <th>Ist aktuell</th>
-        <th>Abweichung</th>
-        <th>Ist Monatsende</th>
-        <th>Abweichung Monatsende</th>
+        <th title="Zielwert für das Monatsende laut Plan">Soll</th>
+        <th title="Dein heute eingetragener Kontostand">Ist aktuell</th>
+        <th title="Ist aktuell minus Soll. Mitten im Monat meist zu positiv, weil noch feste Posten abgehen.">Abweichung</th>
+        <th title="Hochrechnung: Ist aktuell minus noch offene feste Ausgaben plus noch offene feste Einnahmen">Ist Monatsende</th>
+        <th title="Ist Monatsende minus Soll – die wichtigste Zahl: so weit liegst du am Monatsende über (grün) oder unter (rot) dem Plan">Abweichung Monatsende</th>
       </tr>
     </thead>
     <tbody>
@@ -422,6 +502,7 @@ export default {
       istKontostandVormonat: null,
       virtuellerKontostandBetrag: 0,
       virtuellerKontostandVormonat: 0,
+      showKontostandHilfe: false,
       newAusgabe: {
         beschreibung: '',
         betrag: null,
@@ -563,11 +644,15 @@ export default {
       if (this.istKontostandVormonat === null) return null;
       return (parseFloat(this.istKontostandVormonat) - parseFloat(this.virtuellerKontostandVormonat || 0)).toFixed(2);
     },
+    restFesteAusgaben() {
+      return parseFloat(this.summeFesteAusgabenSoll) - parseFloat(this.summeFesteAusgabenIst);
+    },
+    restFesteEinnahmen() {
+      return parseFloat(this.summeFesteEinnahmenSoll) - parseFloat(this.summeFesteEinnahmenIst);
+    },
     voraussichtlicherKontostand() {
       if (this.istKontostand === null || this.istKontostand === '') return null;
-      const restAusgaben = parseFloat(this.summeFesteAusgabenSoll) - parseFloat(this.summeFesteAusgabenIst);
-      const restEinnahmen = parseFloat(this.summeFesteEinnahmenSoll) - parseFloat(this.summeFesteEinnahmenIst);
-      return (parseFloat(this.istKontostand) - restAusgaben + restEinnahmen).toFixed(2);
+      return (parseFloat(this.istKontostand) - this.restFesteAusgaben + this.restFesteEinnahmen).toFixed(2);
     },
     abweichungMonatsendeSoll() {
       if (this.voraussichtlicherKontostand === null) return null;
@@ -618,6 +703,12 @@ export default {
     window.removeEventListener("scroll", this.checkScroll);
   },
   methods: {
+    euro(v) {
+      return Number(v).toFixed(2) + ' €';
+    },
+    ueberUnter(v) {
+      return `${Math.abs(Number(v)).toFixed(2)} € ${Number(v) < 0 ? 'unter' : 'über'}`;
+    },
 
   /* getAktiveAusgabenFürMonat(monat, jahr) {
     return this.festeAusgaben.filter(ausgabe => 
@@ -1273,6 +1364,63 @@ input[type="number"] {
   border-color: #007bff;
   outline: none;
   box-shadow: 0 0 5px rgba(0,123,255,0.3);
+}
+
+.kontostand-hilfe {
+  margin-bottom: 15px;
+  padding: 14px 18px;
+  background-color: white;
+  border: 1px solid #b6d4fe;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.kontostand-hilfe ol {
+  margin: 12px 0 0;
+  padding-left: 20px;
+}
+
+.kontostand-hilfe li {
+  margin-bottom: 8px;
+}
+
+.hilfe-titel {
+  font-weight: bold;
+  margin: 10px 0 6px;
+}
+
+.hilfe-rechnung {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hilfe-chip {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+}
+
+.hilfe-chip span {
+  font-size: 11px;
+  color: #666;
+}
+
+.hilfe-chip-ergebnis {
+  background-color: #e7f1ff;
+  border-color: #b6d4fe;
+}
+
+.hilfe-op {
+  font-size: 18px;
+  font-weight: bold;
+  color: #666;
 }
 
 .kontostand-hinweis {

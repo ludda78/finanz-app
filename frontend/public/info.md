@@ -34,6 +34,26 @@ Die Finanzapp unterstützt dich beim Überblick über Einnahmen, Ausgaben und Ko
 4. **Ist-Kontostand eintragen**:  
    - Im Feld „Ist-Kontostand“ deinen aktuellen Kontostand eingeben, um die **Abweichung** zum Soll zu sehen.
 
+### Die Kontostand-Box in der Monatsübersicht lesen
+Die Box beantwortet eine Frage: **Ist am Monatsende so viel Geld auf dem Konto wie geplant?** Grün = mehr als geplant, Rot = weniger. Über den Button **„? Wie lese ich das?"** in der Box siehst du denselben Rechenweg mit den Zahlen des gewählten Monats.
+
+**Beispiel (Oktober):** Soll −272 €, Ist aktuell 876 €, Ist Monatsende −765 €, offene ungeplante Ausgaben 154 €.
+
+| Zahl | Bedeutung | Beispiel |
+|---|---|---|
+| **Soll-Kontostand** | So viel muss am Monatsende auf dem Konto sein, damit sich teure und günstige Monate übers Jahr ausgleichen (Jahresende ±0). Negativ = das Konto darf laut Plan im Minus sein. | −272 € |
+| **Virtueller Kontostand** | Geplante feste Einnahmen minus Ausgaben seit Januar – der Stand, wenn alles exakt nach Plan läuft. | −631 € |
+| **Ist aktuell** | Dein heute eingetragener Kontostand. | 876 € |
+| **Abweichung** | Ist aktuell − Soll. Mitten im Monat meist zu positiv, weil noch feste Posten abgehen. Erst am Monatsende aussagekräftig. | +1148 € |
+| **Ist Monatsende** | Hochrechnung: Ist aktuell − noch offene feste Ausgaben + noch offene feste Einnahmen. | −765 € |
+| **Abweichung Monatsende** | Ist Monatsende − Soll. **Die wichtigste Zahl.** | −765 − (−272) = −493 € |
+
+**Gelber Kasten (offene ungeplante Ausgaben):** Diese Ausgaben sind schon vom Konto weg, aber noch nicht ausgeglichen. Buchst du sie zurück, steigt „Ist Monatsende" um den Betrag: −765 + 154 = −611 €, Abweichung zum Soll also −339 €. Die graue Klammer („−400 € ggü. September") ist der Trend: Ende September lagst du +61 € über dem Soll, jetzt −339 € darunter – der Abstand hat sich in diesem Monat um 400 € verschlechtert.
+
+**Weißer Kasten:** wiederholt die Abweichung von heute und zeigt, wie du den Vormonat abgeschlossen hast (Ist − Soll am Monatsende).
+
+**Faustregel:** Auf „Abweichung Monatsende" schauen – bei offenen ungeplanten Ausgaben auf den gelben Kasten. Die graue Klammer sagt dir, ob der Monat besser oder schlechter lief als der letzte.
+
 ### Tipps
 - „**Soll-Kontostand neu berechnen**“ klicken, wenn Werte unstimmig wirken.  
 - **Swagger UI** unter `/docs` nutzen, um API-Endpunkte schnell zu testen.  
