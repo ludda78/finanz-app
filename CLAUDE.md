@@ -21,7 +21,7 @@ finanzapp/
 │   │   │   ├── FesteKonfiguration.vue  # Verwaltung fester Ein-/Ausgaben
 │   │   │   ├── Auswertung.vue          # Jahresauswertung: Saldo-Chart, variable Kosten, Delta feste Posten
 │   │   │   ├── Kredite.vue             # Kreditverwaltung: Kennzahlen, Restschuld-Chart, CRUD
-│   │   │   └── InfoPage.vue
+│   │   │   └── InfoPage.vue            # rendert frontend/public/info.md (Erklärtexte, u.a. Kontostand-Box)
 │   │   └── api.js                      # Axios-Client, baseURL: "/api"
 │   └── vue.config.js                   # Dev-Proxy /api → localhost:8001
 └── backend/
@@ -36,6 +36,7 @@ finanzapp/
 - **Soll-Kontostand** = kumulierte Abweichung der monatlichen Ausgaben vom Jahresdurchschnitt (nur feste Ausgaben, ohne Kategorie "Andrea"). Berechnet in `crud.py::berechne_soll_kontostaende_fuer_jahr`.
 - **Virtueller Kontostand** = kumulierter Monatssaldo (Einnahmen − Ausgaben).
 - **Delta zum Mittel** = monatliche Einzelabweichung vom Durchschnitt — Kumulation davon ergibt den Soll-Kontostand.
+- **Kontostand-Box (Monatsübersicht)**: Ist Monatsende = Ist aktuell − offene feste Ausgaben + offene feste Einnahmen; Abweichung Monatsende = Ist Monatsende − Soll. Gelber Kasten rechnet offene ungeplante Ausgaben (`nicht_ausgeglichen`) wieder drauf. Erklärung in der App: Button „? Wie lese ich das?" und `info.md`.
 - **Annuitätendarlehen (Kredite)** = Tilgungsplan wird vollständig im Frontend berechnet (`Kredite.vue::berechnePlan`): Monatszins = Restschuld × Zinssatz / 12 / 100, Tilgung = Rate − Zinsen, neue Restschuld = Restschuld − Tilgung.
 
 ## API-Endpunkte (Backend)
